@@ -13,7 +13,8 @@ import {
   HeartPulse, 
   Wallet,
   TrendingUp,
-  ArrowRight
+  ArrowRight,
+  Truck
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,11 @@ async function fetchAutoExpenseStats() {
 
   // Categorize auto expenses
   const salaryExpenses = expenses.filter(e => e.notes?.includes("payroll:"));
-  const feedExpenses = expenses.filter(e => e.notes?.includes("feed_purchase:") || e.notes?.includes("feed_"));
+  const feedExpenses = expenses.filter(e => 
+    (e.notes?.includes("feed_purchase:") || e.notes?.includes("feed_")) &&
+    !e.notes?.includes("milk_procurement:")
+  );
+  const milkProcurementExpenses = expenses.filter(e => e.notes?.includes("milk_procurement:"));
   const equipmentExpenses = expenses.filter(e => e.notes?.includes("equipment:"));
   const maintenanceExpenses = expenses.filter(e => e.notes?.includes("maintenance:"));
   const healthExpenses = expenses.filter(e => e.notes?.includes("health:"));
@@ -59,6 +64,15 @@ async function fetchAutoExpenseStats() {
       bgColor: "bg-primary/10",
       total: salaryExpenses.reduce((sum, e) => sum + Number(e.amount), 0),
       count: salaryExpenses.length,
+    },
+    {
+      category: "milk_procurement",
+      label: "Milk Procurement",
+      icon: Truck,
+      color: "text-amber-600",
+      bgColor: "bg-amber-500/10",
+      total: milkProcurementExpenses.reduce((sum, e) => sum + Number(e.amount), 0),
+      count: milkProcurementExpenses.length,
     },
     {
       category: "feed",
