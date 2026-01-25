@@ -95,6 +95,8 @@ const emptyForm = {
   notes: "",
 };
 
+type FormState = typeof emptyForm;
+
 export function MilkProcurement() {
   const [vendors, setVendors] = useState<MilkVendor[]>([]);
   const [procurements, setProcurements] = useState<MilkProcurement[]>([]);
@@ -113,19 +115,28 @@ export function MilkProcurement() {
   const [selectedProcurement, setSelectedProcurement] = useState<MilkProcurement | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("cash");
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<FormState>(emptyForm);
   const { toast } = useToast();
   const { logMilkProcurementPayment } = useExpenseAutomation();
   const queryClient = useQueryClient();
 
-  // Fetch vendors
+  // Fetch vendors with error handling
   const fetchVendors = useCallback(async () => {
-    const { data } = await supabase
-      .from("milk_vendors")
-      .select("id, name, phone, address")
-      .eq("is_active", true)
-      .order("name");
-    setVendors(data || []);
+    try {
+      const { data, error } = await supabase
+        .from("milk_vendors")
+        .select("id, name, phone, address")
+        .eq("is_active", true)
+        .order("name");
+      
+      if (error) {
+        console.error("Error fetching vendors:", error);
+        return;
+      }
+      setVendors(data || []);
+    } catch (err) {
+      console.error("Unexpected error fetching vendors:", err);
+    }
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -133,35 +144,48 @@ export function MilkProcurement() {
     const today = format(new Date(), "yyyy-MM-dd");
     const weekAgo = format(subDays(new Date(), 7), "yyyy-MM-dd");
 
-    const { data, error } = await supabase
-      .from("milk_procurement")
-      .select("*")
-      .order("procurement_date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(100);
+    try {
+      const { data, error } = await supabase
+        .from("milk_procurement")
+        .select("*")
+        .order("procurement_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(100);
 
-    if (error) {
-      toast({
-        title: "Error fetching procurement data",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      setProcurements(data || []);
+      if (error) {
+        toast({
+          title: "Error fetching procurement data",
+          description: error.message,
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
       
-      // Calculate stats
-      const todayData = (data || []).filter(p => p.procurement_date === today);
-      const weekData = (data || []).filter(p => p.procurement_date >= weekAgo);
-      const pending = (data || []).filter(p => p.payment_status !== "paid");
+      const records = data || [];
+      setProcurements(records);
+      
+      // Calculate stats with safe number handling
+      const todayData = records.filter(p => p.procurement_date === today);
+      const weekData = records.filter(p => p.procurement_date >= weekAgo);
+      const pending = records.filter(p => p.payment_status !== "paid");
       
       setStats({
-        todayQuantity: todayData.reduce((sum, p) => sum + Number(p.quantity_liters), 0),
-        todayAmount: todayData.reduce((sum, p) => sum + Number(p.total_amount), 0),
-        weekQuantity: weekData.reduce((sum, p) => sum + Number(p.quantity_liters), 0),
-        pendingPayments: pending.reduce((sum, p) => sum + (Number(p.total_amount) - Number(p.paid_amount || 0)), 0),
+        todayQuantity: todayData.reduce((sum, p) => sum + (Number(p.quantity_liters) || 0), 0),
+        todayAmount: todayData.reduce((sum, p) => sum + (Number(p.total_amount) || 0), 0),
+        weekQuantity: weekData.reduce((sum, p) => sum + (Number(p.quantity_liters) || 0), 0),
+        pendingPayments: pending.reduce((sum, p) => sum + ((Number(p.total_amount) || 0) - (Number(p.paid_amount) || 0)), 0),
       });
+    } catch (err) {
+      console.error("Unexpected error fetching procurement data:", err);
+      toast({
+        title: "Error",
+        description: "Failed to load procurement data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [toast]);
 
   useEffect(() => {
@@ -241,19 +265,21 @@ export function MilkProcurement() {
   };
 
   const handleEdit = (procurement: MilkProcurement) => {
+    if (!procurement) return;
+    
     setEditingId(procurement.id);
     setForm({
-      procurement_date: procurement.procurement_date,
+      procurement_date: procurement.procurement_date || format(new Date(), "yyyy-MM-dd"),
       vendor_id: procurement.vendor_id || "",
-      supplier_name: procurement.supplier_name,
+      supplier_name: procurement.supplier_name || "",
       supplier_phone: procurement.supplier_phone || "",
       supplier_address: procurement.supplier_address || "",
-      quantity_liters: procurement.quantity_liters.toString(),
-      fat_percentage: procurement.fat_percentage?.toString() || "",
-      snf_percentage: procurement.snf_percentage?.toString() || "",
-      rate_per_liter: procurement.rate_per_liter.toString(),
-      payment_status: procurement.payment_status,
-      paid_amount: procurement.paid_amount?.toString() || "",
+      quantity_liters: String(procurement.quantity_liters ?? ""),
+      fat_percentage: procurement.fat_percentage != null ? String(procurement.fat_percentage) : "",
+      snf_percentage: procurement.snf_percentage != null ? String(procurement.snf_percentage) : "",
+      rate_per_liter: String(procurement.rate_per_liter ?? ""),
+      payment_status: procurement.payment_status || "pending",
+      paid_amount: procurement.paid_amount != null ? String(procurement.paid_amount) : "",
       payment_mode: procurement.payment_mode || "",
       vehicle_number: procurement.vehicle_number || "",
       quality_grade: procurement.quality_grade || "",
@@ -577,8 +603,12 @@ export function MilkProcurement() {
                 <div className="space-y-2">
                   <Label>Select Vendor (Optional)</Label>
                   <Select
-                    value={form.vendor_id}
+                    value={form.vendor_id || "manual"}
                     onValueChange={(value) => {
+                      if (value === "manual") {
+                        setForm({ ...form, vendor_id: "" });
+                        return;
+                      }
                       const vendor = vendors.find(v => v.id === value);
                       if (vendor) {
                         setForm({
@@ -597,7 +627,7 @@ export function MilkProcurement() {
                       <SelectValue placeholder="Choose from saved vendors" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">-- Manual Entry --</SelectItem>
+                      <SelectItem value="manual">-- Manual Entry --</SelectItem>
                       {vendors.map((v) => (
                         <SelectItem key={v.id} value={v.id}>
                           {v.name} {v.phone && `(${v.phone})`}
@@ -711,13 +741,14 @@ export function MilkProcurement() {
                 <div className="space-y-2">
                   <Label>Quality Grade</Label>
                   <Select
-                    value={form.quality_grade}
-                    onValueChange={(value) => setForm({ ...form, quality_grade: value })}
+                    value={form.quality_grade || "none"}
+                    onValueChange={(value) => setForm({ ...form, quality_grade: value === "none" ? "" : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select grade" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">-- No Grade --</SelectItem>
                       <SelectItem value="A">Grade A (Best)</SelectItem>
                       <SelectItem value="B">Grade B (Good)</SelectItem>
                       <SelectItem value="C">Grade C (Average)</SelectItem>
@@ -758,13 +789,14 @@ export function MilkProcurement() {
                 <div className="space-y-2">
                   <Label>Payment Mode</Label>
                   <Select
-                    value={form.payment_mode}
-                    onValueChange={(value) => setForm({ ...form, payment_mode: value })}
+                    value={form.payment_mode || "none"}
+                    onValueChange={(value) => setForm({ ...form, payment_mode: value === "none" ? "" : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select mode" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">-- Not Selected --</SelectItem>
                       <SelectItem value="cash">Cash</SelectItem>
                       <SelectItem value="upi">UPI</SelectItem>
                       <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
