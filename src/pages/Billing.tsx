@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Receipt, IndianRupee, Loader2, Plus, Trash2, Calculator, RefreshCw } from "lucide-react";
+import { Receipt, IndianRupee, Loader2, Plus, Trash2, Calculator, RefreshCw, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { InvoicePDFGenerator } from "@/components/billing/InvoicePDFGenerator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -97,6 +97,8 @@ export default function BillingPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceWithCustomer | null>(null);
   const [calculatingItems, setCalculatingItems] = useState(false);
   const [deliveryCount, setDeliveryCount] = useState(0);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<InvoiceWithCustomer | null>(null);
   
   // Form state
   const [customerId, setCustomerId] = useState("");
@@ -437,6 +439,115 @@ export default function BillingPage() {
     setLineItems([]);
     setDiscountAmount(0);
     setDeliveryCount(0);
+    setIsEditMode(false);
+    setEditingInvoice(null);
+  };
+
+  /**
+   * Parse invoice notes back to line items for editing
+   */
+  const parseNotesToLineItems = (notes: string | null | undefined): LineItem[] => {
+    if (!notes) return [];
+    const items: LineItem[] = [];
+    const noteLines = notes.split("; ");
+    
+    noteLines.forEach((line) => {
+      // Match: "Product: qty unit @ Rs.rate/unit" or "@ ₹rate"
+      const match = line.match(/(.+?):\s*([\d.]+)\s*(\w+)\s*@\s*(?:Rs\.?|₹)\s*([\d.]+)/i);
+      if (match) {
+        const [, productName, qty, unit, rate] = match;
+        const product = products.find(p => 
+          p.name.toLowerCase() === productName.trim().toLowerCase()
+        );
+        // Create line item with or without product match
+        items.push({
+          id: crypto.randomUUID(),
+          product_id: product?.id || "",
+          product_name: productName.trim(),
+          quantity: parseFloat(qty),
+          unit: unit,
+          rate: parseFloat(rate),
+          tax_percentage: product?.tax_percentage || 0,
+          amount: parseFloat(qty) * parseFloat(rate),
+          source: 'manual'
+        });
+      }
+    });
+    return items;
+  };
+
+  /**
+   * Handle opening the edit dialog for an invoice
+   */
+  const handleEditInvoice = (invoice: InvoiceWithCustomer) => {
+    setEditingInvoice(invoice);
+    setCustomerId(invoice.customer_id);
+    setPeriodStart(invoice.billing_period_start);
+    setPeriodEnd(invoice.billing_period_end);
+    setDiscountAmount(Number(invoice.discount_amount) || 0);
+    
+    // Parse notes to line items
+    const parsedItems = parseNotesToLineItems(invoice.notes);
+    setLineItems(parsedItems.length > 0 ? parsedItems : []);
+    
+    setIsEditMode(true);
+    setDialogOpen(true);
+  };
+
+  /**
+   * Handle updating an existing invoice
+   */
+  const handleUpdateInvoice = async () => {
+    if (!editingInvoice) return;
+    
+    if (lineItems.length === 0 || lineItems.every(item => item.amount === 0)) {
+      toast({
+        title: "Validation Error",
+        description: "Please add at least one line item with quantity and rate",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+    
+    // Format line items for notes
+    const itemsDetail = lineItems
+      .filter(item => item.product_name && item.quantity > 0)
+      .map(item => `${item.product_name}: ${item.quantity} ${item.unit} @ ₹${item.rate}/${item.unit}`)
+      .join("; ");
+
+    const { error } = await supabase
+      .from("invoices")
+      .update({
+        billing_period_start: periodStart,
+        billing_period_end: periodEnd,
+        total_amount: subtotal,
+        tax_amount: totalTax,
+        discount_amount: discountAmount,
+        final_amount: grandTotal,
+        notes: itemsDetail || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", editingInvoice.id);
+
+    setSaving(false);
+
+    if (error) {
+      toast({
+        title: "Error updating invoice",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Invoice updated",
+        description: "The invoice has been updated successfully",
+      });
+      setDialogOpen(false);
+      resetForm();
+      fetchData();
+    }
   };
 
   const handleRecordPayment = async () => {
@@ -562,19 +673,30 @@ export default function BillingPage() {
       key: "actions",
       header: "Actions",
       render: (item: InvoiceWithCustomer) => (
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1"
-          onClick={() => {
-            setSelectedInvoice(item);
-            setPaymentAmount("");
-            setPaymentDialogOpen(true);
-          }}
-          disabled={item.payment_status === "paid"}
-        >
-          <IndianRupee className="h-3 w-3" /> Pay
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => handleEditInvoice(item)}
+            disabled={item.payment_status === "paid"}
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => {
+              setSelectedInvoice(item);
+              setPaymentAmount("");
+              setPaymentDialogOpen(true);
+            }}
+            disabled={item.payment_status === "paid"}
+          >
+            <IndianRupee className="h-3 w-3" /> Pay
+          </Button>
+        </div>
       ),
     },
   ];
@@ -641,12 +763,19 @@ export default function BillingPage() {
         emptyMessage="No invoices found. Create your first invoice."
       />
 
-      {/* Create Invoice Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {/* Create/Edit Invoice Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open);
+        if (!open) resetForm();
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Create Invoice</DialogTitle>
-            <DialogDescription>Auto-calculate from deliveries or add items manually</DialogDescription>
+            <DialogTitle>{isEditMode ? "Edit Invoice" : "Create Invoice"}</DialogTitle>
+            <DialogDescription>
+              {isEditMode 
+                ? "Modify invoice details before payment" 
+                : "Auto-calculate from deliveries or add items manually"}
+            </DialogDescription>
           </DialogHeader>
 
           <ScrollArea className="flex-1 pr-4">
@@ -654,7 +783,7 @@ export default function BillingPage() {
               {/* Customer Selection */}
               <div className="space-y-2">
                 <Label>Customer *</Label>
-                <Select value={customerId} onValueChange={setCustomerId}>
+                <Select value={customerId} onValueChange={setCustomerId} disabled={isEditMode}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select customer" />
                   </SelectTrigger>
@@ -664,6 +793,9 @@ export default function BillingPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {isEditMode && (
+                  <p className="text-xs text-muted-foreground">Customer cannot be changed on existing invoices</p>
+                )}
               </div>
 
               {/* Period Selection */}
@@ -686,29 +818,31 @@ export default function BillingPage() {
                 </div>
               </div>
 
-              {/* Auto-Calculate Button */}
-              <Alert className="bg-primary/5 border-primary/20">
-                <Calculator className="h-4 w-4" />
-                <AlertDescription className="flex items-center justify-between">
-                  <span className="text-sm">
-                    Auto-calculate items from delivered products & subscriptions
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={autoCalculateFromDeliveries}
-                    disabled={!customerId || calculatingItems}
-                    className="ml-4 gap-2"
-                  >
-                    {calculatingItems ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                    {calculatingItems ? "Calculating..." : "Auto Calculate"}
-                  </Button>
-                </AlertDescription>
-              </Alert>
+              {/* Auto-Calculate Button - Only show in create mode */}
+              {!isEditMode && (
+                <Alert className="bg-primary/5 border-primary/20">
+                  <Calculator className="h-4 w-4" />
+                  <AlertDescription className="flex items-center justify-between">
+                    <span className="text-sm">
+                      Auto-calculate items from delivered products & subscriptions
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={autoCalculateFromDeliveries}
+                      disabled={!customerId || calculatingItems}
+                      className="ml-4 gap-2"
+                    >
+                      {calculatingItems ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                      {calculatingItems ? "Calculating..." : "Auto Calculate"}
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {/* Delivery Count Info */}
               {deliveryCount > 0 && lineItems.length > 0 && (
@@ -857,9 +991,12 @@ export default function BillingPage() {
 
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateInvoice} disabled={saving}>
+            <Button 
+              onClick={isEditMode ? handleUpdateInvoice : handleCreateInvoice} 
+              disabled={saving}
+            >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Invoice
+              {isEditMode ? "Update Invoice" : "Create Invoice"}
             </Button>
           </div>
         </DialogContent>
