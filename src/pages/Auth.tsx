@@ -161,9 +161,11 @@ export default function Auth() {
       {/* Left side - Branding */}
       <div className="hidden w-1/2 gradient-hero lg:flex lg:flex-col lg:items-center lg:justify-center lg:p-12">
         <div className="max-w-md text-center animate-fade-in">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-sidebar-primary shadow-glow">
-            <Droplets className="h-10 w-10 text-sidebar-primary-foreground" />
-          </div>
+          <img 
+            src="/images/awadh-dairy-logo.png" 
+            alt="Awadh Dairy" 
+            className="mx-auto mb-6 h-32 w-32 object-contain drop-shadow-xl"
+          />
           <h1 className="mb-4 text-4xl font-bold text-sidebar-foreground">
             Awadh Dairy
           </h1>
