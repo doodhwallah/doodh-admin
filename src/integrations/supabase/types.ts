@@ -2085,6 +2085,10 @@ export type Database = {
         Args: { _phone: string; _pin: string }
         Returns: Json
       }
+      set_customer_pin_hash: {
+        Args: { _customer_id: string; _new_pin: string }
+        Returns: Json
+      }
       setup_initial_admin: { Args: never; Returns: undefined }
       update_customer_pin: {
         Args: { _current_pin: string; _customer_id: string; _new_pin: string }
