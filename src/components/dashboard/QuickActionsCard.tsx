@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -12,6 +12,7 @@ import {
   PackagePlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCapacitor } from "@/hooks/useCapacitor";
 
 const quickActions = [
   {
@@ -77,6 +78,14 @@ const itemVariants = {
 };
 
 export function QuickActionsCard() {
+  const navigate = useNavigate();
+  const { hapticLight } = useCapacitor();
+
+  const handleActionClick = (href: string) => {
+    hapticLight();
+    navigate(href);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -104,23 +113,22 @@ export function QuickActionsCard() {
           >
             {quickActions.map((action) => (
               <motion.div key={action.title} variants={itemVariants}>
-                <Link to={action.href}>
-                  <motion.div
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
+                <motion.div
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => handleActionClick(action.href)}
+                >
+                  <Button
+                    variant="ghost"
+                    className={cn(
+                      "h-auto w-full flex-col gap-2 p-4 transition-colors duration-200",
+                      action.bgColor
+                    )}
                   >
-                    <Button
-                      variant="ghost"
-                      className={cn(
-                        "h-auto w-full flex-col gap-2 p-4 transition-colors duration-200",
-                        action.bgColor
-                      )}
-                    >
-                      <action.icon className={cn("h-6 w-6", action.color)} />
-                      <span className="text-xs font-medium text-foreground">{action.title}</span>
-                    </Button>
-                  </motion.div>
-                </Link>
+                    <action.icon className={cn("h-6 w-6", action.color)} />
+                    <span className="text-xs font-medium text-foreground">{action.title}</span>
+                  </Button>
+                </motion.div>
               </motion.div>
             ))}
           </motion.div>
