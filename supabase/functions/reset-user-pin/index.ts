@@ -71,7 +71,7 @@ serve(async (req) => {
       )
     }
 
-    // Get user's phone for logging
+    // Get user's profile for logging
     const { data: targetProfile } = await supabaseAdmin
       .from('profiles')
       .select('full_name, phone')
@@ -85,14 +85,14 @@ serve(async (req) => {
       )
     }
 
-    // Update the PIN hash
+    // Update the PIN hash using the fixed database function
     const { error: updatePinError } = await supabaseAdmin.rpc('update_pin_only', {
       _user_id: userId,
       _pin: newPin
     })
 
     if (updatePinError) {
-      console.error('Error updating PIN:', updatePinError)
+      console.error('Error updating PIN hash:', updatePinError)
       return new Response(
         JSON.stringify({ error: 'Failed to reset PIN' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -106,6 +106,7 @@ serve(async (req) => {
 
     if (authError) {
       console.error('Error updating auth password:', authError)
+      // Don't fail - PIN hash is the primary method
     }
 
     console.log(`PIN reset for user ${targetProfile.full_name} (${userId}) by admin ${requestingUser.id}`)
