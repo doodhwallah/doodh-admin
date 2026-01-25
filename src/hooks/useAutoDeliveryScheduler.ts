@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { format, addDays, isWeekend, isBefore, startOfDay } from "date-fns";
+import { format, addDays } from "date-fns";
+import { toast } from "@/hooks/use-toast";
 
 interface CustomerSubscription {
   customer_id: string;
@@ -132,8 +133,46 @@ export function useAutoDeliveryScheduler() {
     return results;
   }, [scheduleDeliveriesForDate]);
 
+  /**
+   * Manually trigger the auto-mark-delivered edge function (for testing)
+   */
+  const triggerAutoMarkDelivered = useCallback(async (
+    targetDate?: string
+  ): Promise<{ success: boolean; result?: unknown; error?: string }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke("auto-mark-delivered", {
+        body: targetDate ? { date: targetDate } : {},
+      });
+
+      if (error) {
+        toast({
+          title: "Auto-mark failed",
+          description: error.message,
+          variant: "destructive",
+        });
+        return { success: false, error: error.message };
+      }
+
+      toast({
+        title: "Auto-mark completed",
+        description: `Marked ${data?.marked || 0} deliveries as delivered`,
+      });
+      
+      return { success: true, result: data };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      toast({
+        title: "Auto-mark failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      return { success: false, error: errorMessage };
+    }
+  }, []);
+
   return {
     scheduleDeliveriesForDate,
     scheduleDeliveriesForRange,
+    triggerAutoMarkDelivered,
   };
 }
