@@ -1,50 +1,83 @@
 
-# PIN Reset/Change System - COMPLETED ✅
+# Fix Login After PIN Reset - Domain Mismatch Issue
 
-## Problem Summary
-Users could not change or reset their PIN because of multiple interconnected issues in the authentication flow.
+## Problem Found
+After admin resets a user's PIN, the user still cannot log in because there is a **mismatch between email domains** in the database vs what the login page uses.
 
-## Root Causes Fixed
+### Current State
+| User | Email in Database | Login Tries |
+|------|-------------------|-------------|
+| Kanhaiya Lal | `9451574464@doodhwallah.app` | `9451574464@awadhdairy.com` |
+| Surendra Singh | `9415688104@doodhwallah.app` | `9415688104@awadhdairy.com` |
 
-### 1. Database Functions Now Find Cryptography Functions ✅
-Updated `update_pin_only` and `update_user_profile_with_pin` functions to include `extensions` in their search path.
-
-### 2. Change PIN Fallback Verification ✅
-The `change-pin` edge function now:
-- First checks if `pin_hash` exists in profiles
-- If no hash exists, verifies against auth password instead
-- After successful verification, stores the new PIN hash AND updates auth password
-
-### 3. Reset PIN Function Fixed ✅
-The `reset-user-pin` edge function now properly:
-- Updates PIN hash using the fixed database function
-- Updates auth password for consistency
-
-### 4. Bootstrap Process Fixed ✅
-The `bootstrap-admin` edge function now stores PIN hash during admin creation.
-
-### 5. Customer PIN Change Fixed ✅
-Added `set_customer_pin_hash` database function and updated `customer-auth` edge function with fallback verification.
+The login page constructs the email as `phone@awadhdairy.com`, but some users were created earlier with a different domain (`@doodhwallah.app`). Even when the PIN reset correctly updates the password, the login fails because it searches for a non-existent email.
 
 ---
 
-## Changes Made
+## Solution
 
-| File | Status | Changes |
-|------|--------|---------|
-| Database: `update_pin_only` | ✅ | Added `extensions` to search_path |
-| Database: `update_user_profile_with_pin` | ✅ | Added `extensions` to search_path |
-| Database: `set_customer_pin_hash` | ✅ | New function for customer PIN updates |
-| `supabase/functions/change-pin/index.ts` | ✅ | Added fallback auth verification |
-| `supabase/functions/reset-user-pin/index.ts` | ✅ | Uses fixed RPC |
-| `supabase/functions/bootstrap-admin/index.ts` | ✅ | Stores PIN hash on creation |
-| `supabase/functions/customer-auth/index.ts` | ✅ | Added fallback for customer PIN change |
+Update all user emails from `@doodhwallah.app` to `@awadhdairy.com` using a database migration. This ensures all users can log in with the standard domain.
 
 ---
 
-## Verification Steps
+## Implementation Steps
 
-1. Test changing PIN as super admin (Settings → Security)
-2. Test resetting another user's PIN (User Management → Reset PIN)
-3. Verify the user can login with the new PIN
-4. Test customer PIN change from Customer Profile
+### Step 1: Database Migration
+Run a migration to update all auth.users emails from the old domain to the new domain:
+
+```sql
+-- Update all users with @doodhwallah.app to @awadhdairy.com
+UPDATE auth.users 
+SET email = REPLACE(email, '@doodhwallah.app', '@awadhdairy.com')
+WHERE email LIKE '%@doodhwallah.app';
+```
+
+### Step 2: Verify Change
+After the migration, verify that all users now have the correct domain:
+- Kanhaiya Lal: `9451574464@awadhdairy.com`
+- Surendra Singh: `9415688104@awadhdairy.com`
+- Super Admin: `7897716792@awadhdairy.com`
+
+---
+
+## Why This Fixes The Issue
+
+| Before Fix | After Fix |
+|------------|-----------|
+| User has email `@doodhwallah.app` | User has email `@awadhdairy.com` |
+| Login looks for `@awadhdairy.com` | Login looks for `@awadhdairy.com` |
+| No match → Login fails | Match found → Login succeeds |
+
+---
+
+## No Code Changes Required
+
+The login page (`Auth.tsx`), `create-user`, and `bootstrap-admin` functions are already correct - they all use `@awadhdairy.com`. Only the database needs to be updated to fix the legacy users.
+
+---
+
+## Affected Users
+
+Based on database analysis, these users need their email domain updated:
+1. **7897716792@doodhwallah.app** → `7897716792@awadhdairy.com` (duplicate admin - may need to be deleted)
+2. **9451574464@doodhwallah.app** → `9451574464@awadhdairy.com` (Kanhaiya Lal)
+3. **9415688104@doodhwallah.app** → `9415688104@awadhdairy.com` (Surendra Singh)
+
+---
+
+## Risk Assessment
+
+**Low Risk**: This is a simple text replacement that only affects the email identifier used for login. It does not affect:
+- User passwords/PINs
+- User profiles
+- User roles
+- Any other user data
+
+---
+
+## Expected Outcome
+
+After implementation:
+- All users will be able to log in with their phone number and PIN
+- PIN reset will work correctly since the domain will match
+- New users created will continue to use the correct domain
