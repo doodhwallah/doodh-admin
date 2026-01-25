@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import CattlePage from "./pages/Cattle";
 import ProductionPage from "./pages/Production";
+import ProcurementPage from "./pages/Procurement";
 import ProductsPage from "./pages/Products";
 import CustomersPage from "./pages/Customers";
 import DeliveriesPage from "./pages/Deliveries";
@@ -55,6 +56,7 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/cattle" element={<CattlePage />} />
             <Route path="/production" element={<ProductionPage />} />
+            <Route path="/procurement" element={<ProcurementPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/customers" element={<CustomersPage />} />
             <Route path="/deliveries" element={<DeliveriesPage />} />
