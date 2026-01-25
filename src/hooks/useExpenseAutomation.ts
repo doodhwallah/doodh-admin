@@ -183,6 +183,33 @@ export function useExpenseAutomation() {
   };
 
   /**
+   * Log milk procurement payment expense
+   * Only called when actual payment is made to vendor (not on daily entry)
+   */
+  const logMilkProcurementPayment = async (
+    supplierName: string,
+    paymentAmount: number,
+    paymentDate: string,
+    procurementId: string,
+    quantityLiters?: number
+  ): Promise<boolean> => {
+    if (paymentAmount <= 0) return false;
+
+    // Use timestamp to allow multiple partial payments for same procurement
+    const reference = `${procurementId}_${Date.now()}`;
+
+    return await createExpense({
+      category: "feed",
+      title: `Milk Procurement - ${supplierName}`,
+      amount: paymentAmount,
+      expense_date: paymentDate,
+      notes: quantityLiters ? `${quantityLiters}L purchased` : undefined,
+      reference_type: "milk_procurement",
+      reference_id: reference,
+    });
+  };
+
+  /**
    * Log generic expense (for miscellaneous losses, damages, etc.)
    */
   const logGenericExpense = async (
@@ -269,6 +296,7 @@ export function useExpenseAutomation() {
     logMaintenanceExpense,
     logHealthExpense,
     logFeedPurchase,
+    logMilkProcurementPayment,
     logGenericExpense,
     logBottleLoss,
     logTransportExpense,

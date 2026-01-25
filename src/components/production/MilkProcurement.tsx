@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useExpenseAutomation } from "@/hooks/useExpenseAutomation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,6 +105,8 @@ export function MilkProcurement() {
   const [paymentMode, setPaymentMode] = useState("cash");
   const [form, setForm] = useState(emptyForm);
   const { toast } = useToast();
+  const { logMilkProcurementPayment } = useExpenseAutomation();
+  const queryClient = useQueryClient();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -283,9 +287,22 @@ export function MilkProcurement() {
         variant: "destructive",
       });
     } else {
+      // Log expense for this payment (only when payment is made, not on daily entry)
+      const expenseLogged = await logMilkProcurementPayment(
+        selectedProcurement.supplier_name,
+        parseFloat(paymentAmount),
+        format(new Date(), "yyyy-MM-dd"),
+        selectedProcurement.id,
+        selectedProcurement.quantity_liters
+      );
+
+      // Invalidate expenses cache to reflect new entry
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["auto-expense-stats"] });
+
       toast({
         title: "Payment recorded",
-        description: `₹${paymentAmount} paid to ${selectedProcurement.supplier_name}`,
+        description: `₹${paymentAmount} paid to ${selectedProcurement.supplier_name}${expenseLogged ? ' (expense logged)' : ''}`,
       });
       setPaymentDialogOpen(false);
       setSelectedProcurement(null);
