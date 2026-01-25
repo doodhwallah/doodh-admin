@@ -10,6 +10,7 @@ import { Plus, Droplets, Stethoscope, PackagePlus, DollarSign, X } from "lucide-
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useCapacitor } from "@/hooks/useCapacitor";
 
 interface QuickAction {
   label: string;
@@ -50,12 +51,24 @@ export function QuickActionFab() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { role } = useUserRole();
+  const { hapticLight, hapticMedium } = useCapacitor();
 
   const availableActions = quickActions.filter(
     action => role && action.roles.includes(role)
   );
 
   if (availableActions.length === 0) return null;
+
+  const handleFabClick = () => {
+    hapticMedium();
+  };
+
+  const handleActionClick = (action: typeof quickActions[0]) => {
+    hapticLight();
+    if (action.href) navigate(action.href);
+    if (action.onClick) action.onClick();
+    setOpen(false);
+  };
 
   return (
     <div className="fixed bottom-24 right-4 z-50 md:hidden">
@@ -67,6 +80,7 @@ export function QuickActionFab() {
               "h-14 w-14 rounded-full shadow-lg transition-transform",
               open && "rotate-45"
             )}
+            onClick={handleFabClick}
           >
             {open ? <X className="h-6 w-6" /> : <Plus className="h-6 w-6" />}
           </Button>
@@ -75,11 +89,7 @@ export function QuickActionFab() {
           {availableActions.map((action) => (
             <DropdownMenuItem
               key={action.label}
-              onClick={() => {
-                if (action.href) navigate(action.href);
-                if (action.onClick) action.onClick();
-                setOpen(false);
-              }}
+              onClick={() => handleActionClick(action)}
               className="py-3"
             >
               <action.icon className="h-4 w-4 mr-3" />
