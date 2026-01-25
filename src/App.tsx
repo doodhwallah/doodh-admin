@@ -39,7 +39,19 @@ import CustomerDeliveries from "./pages/customer/CustomerDeliveries";
 import CustomerBilling from "./pages/customer/CustomerBilling";
 import CustomerProfile from "./pages/customer/CustomerProfile";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30 * 1000, // 30 seconds
+      gcTime: 5 * 60 * 1000, // 5 minutes (formerly cacheTime)
+      retry: 2,
+      refetchOnWindowFocus: false,
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

@@ -18,6 +18,7 @@ interface LedgerResult {
 
 /**
  * Ledger automation for automatic transaction logging
+ * Uses atomic database functions to prevent race conditions
  * 
  * Auto-logs:
  * 1. Delivery charges → Debit entry
@@ -43,27 +44,26 @@ export function useLedgerAutomation() {
   }, []);
 
   /**
-   * Create a ledger entry with automatic balance calculation
+   * Create a ledger entry using atomic database function
+   * This prevents race conditions with concurrent updates
    */
   const createLedgerEntry = useCallback(async (entry: LedgerEntry): Promise<boolean> => {
-    const currentBalance = await getRunningBalance(entry.customer_id);
-    const debit = entry.debit_amount || 0;
-    const credit = entry.credit_amount || 0;
-    const newBalance = currentBalance + debit - credit;
-
-    const { error } = await supabase.from("customer_ledger").insert({
-      customer_id: entry.customer_id,
-      transaction_type: entry.transaction_type,
-      description: entry.description,
-      debit_amount: debit > 0 ? debit : null,
-      credit_amount: credit > 0 ? credit : null,
-      reference_id: entry.reference_id || null,
-      running_balance: newBalance,
-      transaction_date: format(new Date(), "yyyy-MM-dd"),
+    const { error } = await supabase.rpc('create_ledger_entry_atomic', {
+      p_customer_id: entry.customer_id,
+      p_transaction_type: entry.transaction_type,
+      p_description: entry.description,
+      p_debit: entry.debit_amount || 0,
+      p_credit: entry.credit_amount || 0,
+      p_reference_id: entry.reference_id || null,
     });
 
-    return !error;
-  }, [getRunningBalance]);
+    if (error) {
+      console.error('Error creating ledger entry:', error);
+      return false;
+    }
+
+    return true;
+  }, []);
 
   /**
    * Log delivery charge to ledger
@@ -120,31 +120,33 @@ export function useLedgerAutomation() {
   }, [createLedgerEntry]);
 
   /**
-   * Log advance payment to ledger
+   * Log advance payment to ledger using atomic function
+   * This updates both the ledger and customer balance atomically
    */
   const logAdvancePayment = useCallback(async (
     customerId: string,
     amount: number,
     notes?: string
   ): Promise<boolean> => {
-    // Also update customer advance balance
-    try {
-      await supabase
-        .from("customers")
-        .update({ 
-          advance_balance: supabase.rpc ? amount : amount // Will be handled by trigger if exists
-        })
-        .eq("id", customerId);
-    } catch {
-      // Ignore errors - advance balance update is optional
+    // Use atomic function that updates both ledger and customer balance
+    const { error } = await supabase.rpc('record_advance_payment_atomic', {
+      p_customer_id: customerId,
+      p_amount: amount,
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      console.error('Error recording advance payment:', error);
+      // Fallback to non-atomic method if RPC fails (e.g., function doesn't exist)
+      return createLedgerEntry({
+        customer_id: customerId,
+        transaction_type: "advance",
+        description: notes || "Advance payment received",
+        credit_amount: amount,
+      });
     }
 
-    return createLedgerEntry({
-      customer_id: customerId,
-      transaction_type: "advance",
-      description: notes || "Advance payment received",
-      credit_amount: amount,
-    });
+    return true;
   }, [createLedgerEntry]);
 
   /**

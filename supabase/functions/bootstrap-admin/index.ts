@@ -1,12 +1,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-api-version',
+// CORS with origin validation
+const ALLOWED_ORIGINS = [
+  'https://doodhwallah.lovable.app',
+  Deno.env.get('APP_URL'),
+].filter(Boolean);
+
+function getCorsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0] || '*';
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-api-version',
+  };
 }
 
+// Phone validation regex for Indian mobile numbers
+const PHONE_REGEX = /^[6-9]\d{9}$/;
+
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -15,8 +30,36 @@ serve(async (req) => {
   try {
     const { phone, pin } = await req.json()
 
-    // Validate input - only allow the specific admin credentials
-    if (phone !== '7897716792' || pin !== '101101') {
+    // Get bootstrap credentials from environment variables
+    const bootstrapPhone = Deno.env.get('BOOTSTRAP_ADMIN_PHONE')
+    const bootstrapPin = Deno.env.get('BOOTSTRAP_ADMIN_PIN')
+
+    // Validate that bootstrap credentials are configured
+    if (!bootstrapPhone || !bootstrapPin) {
+      console.error('Bootstrap credentials not configured in environment')
+      return new Response(
+        JSON.stringify({ error: 'Bootstrap not available. Contact system administrator.' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Validate input format
+    if (!phone || !PHONE_REGEX.test(phone)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid phone number format' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (!pin || !/^\d{6}$/.test(pin)) {
+      return new Response(
+        JSON.stringify({ error: 'PIN must be exactly 6 digits' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Validate against environment credentials
+    if (phone !== bootstrapPhone || pin !== bootstrapPin) {
       return new Response(
         JSON.stringify({ error: 'Invalid bootstrap credentials' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

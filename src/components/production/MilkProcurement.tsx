@@ -358,18 +358,12 @@ export function MilkProcurement() {
   const handleRecordPayment = async () => {
     if (!selectedProcurement || !paymentAmount) return;
 
-    const newPaidAmount = Number(selectedProcurement.paid_amount || 0) + parseFloat(paymentAmount);
-    const newStatus = newPaidAmount >= selectedProcurement.total_amount ? "paid" : "partial";
-
-    const { error } = await supabase
-      .from("milk_procurement")
-      .update({
-        paid_amount: newPaidAmount,
-        payment_status: newStatus,
-        payment_date: format(new Date(), "yyyy-MM-dd"),
-        payment_mode: paymentMode,
-      })
-      .eq("id", selectedProcurement.id);
+    // Use atomic database function to prevent race conditions
+    const { data, error } = await supabase.rpc('record_procurement_payment', {
+      p_procurement_id: selectedProcurement.id,
+      p_payment_amount: parseFloat(paymentAmount),
+      p_payment_mode: paymentMode,
+    });
 
     if (error) {
       toast({
