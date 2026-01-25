@@ -663,7 +663,9 @@ export function MilkProcurement() {
                     </SelectTrigger>
                     <SelectContent>
                       {vendors.length === 0 ? (
-                        <SelectItem value="" disabled>No vendors available</SelectItem>
+                        <div className="py-2 px-3 text-sm text-muted-foreground">
+                          No vendors available
+                        </div>
                       ) : (
                         vendors.map((v) => (
                           <SelectItem key={v.id} value={v.id}>
