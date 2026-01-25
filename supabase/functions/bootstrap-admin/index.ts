@@ -61,6 +61,18 @@ serve(async (req) => {
         console.error('Profile update error:', profileUpdateError)
       }
 
+      // Ensure PIN hash is stored using the fixed database function
+      const { error: pinHashError } = await supabaseAdmin.rpc('update_pin_only', {
+        _user_id: existingUser.id,
+        _pin: pin
+      })
+
+      if (pinHashError) {
+        console.error('PIN hash update error:', pinHashError)
+      } else {
+        console.log('PIN hash updated for existing admin')
+      }
+
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -105,6 +117,18 @@ serve(async (req) => {
       .from('profiles')
       .update({ role: 'super_admin', full_name: 'Super Admin', phone: phone })
       .eq('id', userId)
+
+    // Store the PIN hash using the fixed database function
+    const { error: pinHashError } = await supabaseAdmin.rpc('update_pin_only', {
+      _user_id: userId,
+      _pin: pin
+    })
+
+    if (pinHashError) {
+      console.error('PIN hash storage error:', pinHashError)
+    } else {
+      console.log('PIN hash stored for new admin')
+    }
 
     return new Response(
       JSON.stringify({ 

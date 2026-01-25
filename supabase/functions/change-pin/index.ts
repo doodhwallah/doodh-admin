@@ -57,66 +57,81 @@ serve(async (req) => {
       )
     }
 
-    // Verify current PIN
-    const { data: profile } = await supabaseAdmin
+    // Get user's profile including pin_hash
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('phone')
+      .select('phone, pin_hash')
       .eq('id', user.id)
       .single()
 
-    if (!profile?.phone) {
+    if (profileError || !profile?.phone) {
       return new Response(
         JSON.stringify({ error: 'User profile not found' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Verify the current PIN using the verify_pin function
-    const { data: verifiedUserId, error: verifyError } = await supabaseAdmin.rpc('verify_pin', {
-      _phone: profile.phone,
-      _pin: currentPin
-    })
+    let verified = false
 
-    if (verifyError || !verifiedUserId) {
+    // Check if user has a pin_hash stored
+    if (profile.pin_hash) {
+      // Verify using the stored hash
+      const { data: verifiedUserId, error: verifyError } = await supabaseAdmin.rpc('verify_pin', {
+        _phone: profile.phone,
+        _pin: currentPin
+      })
+
+      if (!verifyError && verifiedUserId) {
+        verified = true
+      }
+    } else {
+      // No pin_hash stored - verify against auth password instead
+      // This handles first-time PIN change for users created before hash storage was fixed
+      const email = `${profile.phone}@awadhdairy.com`
+      
+      const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+        email,
+        password: currentPin
+      })
+
+      if (!signInError && signInData?.user) {
+        verified = true
+        console.log(`User ${user.id} verified via auth password (no pin_hash existed)`)
+      }
+    }
+
+    if (!verified) {
       return new Response(
         JSON.stringify({ error: 'Current PIN is incorrect' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Update the PIN hash and auth password
-    const { error: updatePinError } = await supabaseAdmin.rpc('update_user_profile_with_pin', {
-      _user_id: user.id,
-      _full_name: null, // Will be handled by the function
-      _phone: profile.phone,
-      _role: null, // Keep existing role
-      _pin: newPin
-    })
-
-    // Also update the auth password
-    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
-      password: newPin
-    })
-
-    if (authError) {
-      console.error('Error updating auth password:', authError)
-    }
-
-    // Direct update for PIN hash only
-    const { error: directUpdateError } = await supabaseAdmin.rpc('update_pin_only', {
+    // Update the PIN hash using the fixed database function
+    const { error: updatePinError } = await supabaseAdmin.rpc('update_pin_only', {
       _user_id: user.id,
       _pin: newPin
     })
 
-    if (directUpdateError) {
-      console.error('Error updating PIN:', directUpdateError)
+    if (updatePinError) {
+      console.error('Error updating PIN hash:', updatePinError)
       return new Response(
         JSON.stringify({ error: 'Failed to update PIN' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    console.log(`PIN updated for user ${user.id}`)
+    // Also update the auth password to keep in sync
+    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+      password: newPin
+    })
+
+    if (authError) {
+      console.error('Error updating auth password:', authError)
+      // Don't fail the request - the PIN hash is updated, which is the primary auth method
+    }
+
+    console.log(`PIN updated successfully for user ${user.id}`)
 
     return new Response(
       JSON.stringify({ success: true, message: 'PIN updated successfully' }),
