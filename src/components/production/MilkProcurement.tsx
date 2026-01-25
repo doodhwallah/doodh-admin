@@ -30,8 +30,7 @@ import {
   Plus, 
   IndianRupee, 
   Loader2, 
-  Phone, 
-  MapPin,
+  Phone,
   Droplets,
   TrendingUp,
   Calendar,
@@ -81,18 +80,12 @@ interface ProcurementStats {
 const emptyForm = {
   procurement_date: format(new Date(), "yyyy-MM-dd"),
   vendor_id: "",
-  supplier_name: "",
-  supplier_phone: "",
-  supplier_address: "",
+  session: "morning" as "morning" | "evening",
   quantity_liters: "",
   fat_percentage: "",
   snf_percentage: "",
   rate_per_liter: "",
   payment_status: "pending",
-  paid_amount: "",
-  payment_mode: "",
-  vehicle_number: "",
-  quality_grade: "",
   notes: "",
 };
 
@@ -230,10 +223,21 @@ export function MilkProcurement() {
   };
 
   const handleSave = async () => {
-    if (!form.supplier_name || !form.quantity_liters || !form.rate_per_liter) {
+    if (!form.vendor_id || !form.quantity_liters || !form.rate_per_liter) {
       toast({
         title: "Validation Error",
-        description: "Please fill in supplier name, quantity, and rate",
+        description: "Please select a vendor and fill in quantity and rate",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get supplier details from selected vendor
+    const selectedVendor = vendors.find(v => v.id === form.vendor_id);
+    if (!selectedVendor) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a valid vendor",
         variant: "destructive",
       });
       return;
@@ -244,21 +248,21 @@ export function MilkProcurement() {
 
     const record = {
       procurement_date: form.procurement_date,
-      vendor_id: form.vendor_id || null,
-      supplier_name: form.supplier_name,
-      supplier_phone: form.supplier_phone || null,
-      supplier_address: form.supplier_address || null,
+      vendor_id: form.vendor_id,
+      supplier_name: selectedVendor.name,
+      supplier_phone: selectedVendor.phone || null,
+      supplier_address: selectedVendor.address || null,
       quantity_liters: parseFloat(form.quantity_liters),
       fat_percentage: form.fat_percentage ? parseFloat(form.fat_percentage) : null,
       snf_percentage: form.snf_percentage ? parseFloat(form.snf_percentage) : null,
       rate_per_liter: parseFloat(form.rate_per_liter),
       total_amount: totalAmount,
       payment_status: form.payment_status,
-      paid_amount: form.paid_amount ? parseFloat(form.paid_amount) : 0,
-      payment_mode: form.payment_mode || null,
-      vehicle_number: form.vehicle_number || null,
-      quality_grade: form.quality_grade || null,
-      notes: form.notes || null,
+      paid_amount: 0,
+      payment_mode: null,
+      vehicle_number: null,
+      quality_grade: null,
+      notes: form.notes ? `[${form.session.toUpperCase()}] ${form.notes}` : `[${form.session.toUpperCase()}]`,
     };
 
     let error;
@@ -284,9 +288,10 @@ export function MilkProcurement() {
         variant: "destructive",
       });
     } else {
+      const vendorName = vendors.find(v => v.id === form.vendor_id)?.name || "vendor";
       toast({
         title: editingId ? "Procurement updated" : "Procurement recorded",
-        description: `${form.quantity_liters}L from ${form.supplier_name} @ ₹${form.rate_per_liter}/L`,
+        description: `${form.quantity_liters}L from ${vendorName} @ ₹${form.rate_per_liter}/L`,
       });
       setDialogOpen(false);
       resetForm();
@@ -297,23 +302,22 @@ export function MilkProcurement() {
   const handleEdit = (procurement: MilkProcurement) => {
     if (!procurement) return;
     
+    // Extract session from notes if available
+    const sessionMatch = procurement.notes?.match(/^\[(MORNING|EVENING)\]/i);
+    const session = sessionMatch ? sessionMatch[1].toLowerCase() as "morning" | "evening" : "morning";
+    const cleanNotes = procurement.notes?.replace(/^\[(MORNING|EVENING)\]\s*/i, "") || "";
+    
     setEditingId(procurement.id);
     setForm({
       procurement_date: procurement.procurement_date || format(new Date(), "yyyy-MM-dd"),
       vendor_id: procurement.vendor_id || "",
-      supplier_name: procurement.supplier_name || "",
-      supplier_phone: procurement.supplier_phone || "",
-      supplier_address: procurement.supplier_address || "",
+      session: session,
       quantity_liters: String(procurement.quantity_liters ?? ""),
       fat_percentage: procurement.fat_percentage != null ? String(procurement.fat_percentage) : "",
       snf_percentage: procurement.snf_percentage != null ? String(procurement.snf_percentage) : "",
       rate_per_liter: String(procurement.rate_per_liter ?? ""),
       payment_status: procurement.payment_status || "pending",
-      paid_amount: procurement.paid_amount != null ? String(procurement.paid_amount) : "",
-      payment_mode: procurement.payment_mode || "",
-      vehicle_number: procurement.vehicle_number || "",
-      quality_grade: procurement.quality_grade || "",
-      notes: procurement.notes || "",
+      notes: cleanNotes,
     });
     setDialogOpen(true);
   };
@@ -632,236 +636,147 @@ export function MilkProcurement() {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <div className="space-y-4 py-4">
-              {/* Row 1: Date and Vendor Selection */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Date *</Label>
-                  <Input
-                    type="date"
-                    value={form.procurement_date}
-                    onChange={(e) => setForm({ ...form, procurement_date: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Select Vendor (Optional)</Label>
-                  <Select
-                    value={form.vendor_id || "manual"}
-                    onValueChange={(value) => {
-                      if (value === "manual") {
-                        setForm({ ...form, vendor_id: "" });
-                        return;
-                      }
-                      const vendor = vendors.find(v => v.id === value);
-                      if (vendor) {
-                        setForm({
-                          ...form,
-                          vendor_id: value,
-                          supplier_name: vendor.name,
-                          supplier_phone: vendor.phone || "",
-                          supplier_address: vendor.address || "",
-                        });
-                      } else {
-                        setForm({ ...form, vendor_id: value });
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose from saved vendors" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manual">-- Manual Entry --</SelectItem>
-                      {vendors.map((v) => (
+          <div className="space-y-4 py-4">
+            {/* Row 1: Vendor and Date */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Vendor *</Label>
+                <Select
+                  value={form.vendor_id || ""}
+                  onValueChange={(value) => setForm({ ...form, vendor_id: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a vendor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vendors.length === 0 ? (
+                      <SelectItem value="" disabled>No vendors available</SelectItem>
+                    ) : (
+                      vendors.map((v) => (
                         <SelectItem key={v.id} value={v.id}>
                           {v.name} {v.phone && `(${v.phone})`}
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
-
-              {/* Row 2: Supplier Name (can be manual or auto-filled) */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Supplier Name *</Label>
-                  <Input
-                    placeholder="Enter supplier name"
-                    value={form.supplier_name}
-                    onChange={(e) => setForm({ ...form, supplier_name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1">
-                    <Phone className="h-3 w-3" /> Phone
-                  </Label>
-                  <Input
-                    placeholder="Supplier phone"
-                    value={form.supplier_phone}
-                    onChange={(e) => setForm({ ...form, supplier_phone: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              {/* Row 3: Address */}
               <div className="space-y-2">
-                <Label className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3" /> Address
-                </Label>
+                <Label>Date *</Label>
                 <Input
-                  placeholder="Supplier address"
-                  value={form.supplier_address}
-                  onChange={(e) => setForm({ ...form, supplier_address: e.target.value })}
-                />
-              </div>
-
-              {/* Row 3: Quantity, Rate, Vehicle */}
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Quantity (Liters) *</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="0.00"
-                    value={form.quantity_liters}
-                    onChange={(e) => setForm({ ...form, quantity_liters: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Rate per Liter (₹) *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={form.rate_per_liter}
-                    onChange={(e) => setForm({ ...form, rate_per_liter: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Vehicle Number</Label>
-                  <Input
-                    placeholder="e.g., UP32XX1234"
-                    value={form.vehicle_number}
-                    onChange={(e) => setForm({ ...form, vehicle_number: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              {/* Total Amount Display */}
-              {form.quantity_liters && form.rate_per_liter && (
-                <div className="p-3 rounded-lg bg-muted/50 border">
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Total Amount</span>
-                    <span className="text-xl font-bold">
-                      ₹{parseFloat(calculateTotal(form.quantity_liters, form.rate_per_liter)).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Row 4: Quality Details */}
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Fat %</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="e.g., 4.5"
-                    value={form.fat_percentage}
-                    onChange={(e) => setForm({ ...form, fat_percentage: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>SNF %</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="e.g., 8.5"
-                    value={form.snf_percentage}
-                    onChange={(e) => setForm({ ...form, snf_percentage: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Quality Grade</Label>
-                  <Select
-                    value={form.quality_grade || "none"}
-                    onValueChange={(value) => setForm({ ...form, quality_grade: value === "none" ? "" : value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select grade" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">-- No Grade --</SelectItem>
-                      <SelectItem value="A">Grade A (Best)</SelectItem>
-                      <SelectItem value="B">Grade B (Good)</SelectItem>
-                      <SelectItem value="C">Grade C (Average)</SelectItem>
-                      <SelectItem value="D">Grade D (Below Avg)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Row 5: Payment Details */}
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Payment Status</Label>
-                  <Select
-                    value={form.payment_status}
-                    onValueChange={(value) => setForm({ ...form, payment_status: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Paid Amount</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={form.paid_amount}
-                    onChange={(e) => setForm({ ...form, paid_amount: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Payment Mode</Label>
-                  <Select
-                    value={form.payment_mode || "none"}
-                    onValueChange={(value) => setForm({ ...form, payment_mode: value === "none" ? "" : value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">-- Not Selected --</SelectItem>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="upi">UPI</SelectItem>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="cheque">Cheque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div className="space-y-2">
-                <Label>Notes</Label>
-                <Textarea
-                  placeholder="Any additional notes..."
-                  value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  rows={2}
+                  type="date"
+                  value={form.procurement_date}
+                  onChange={(e) => setForm({ ...form, procurement_date: e.target.value })}
                 />
               </div>
             </div>
-          </ScrollArea>
+
+            {/* Row 2: Session and Quantity */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Session *</Label>
+                <Select
+                  value={form.session}
+                  onValueChange={(value) => setForm({ ...form, session: value as "morning" | "evening" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="morning">Morning</SelectItem>
+                    <SelectItem value="evening">Evening</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Quantity (Liters) *</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="0.00"
+                  value={form.quantity_liters}
+                  onChange={(e) => setForm({ ...form, quantity_liters: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* Row 3: Fat % and SNF % */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Fat %</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="e.g., 4.5"
+                  value={form.fat_percentage}
+                  onChange={(e) => setForm({ ...form, fat_percentage: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>SNF %</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="e.g., 8.5"
+                  value={form.snf_percentage}
+                  onChange={(e) => setForm({ ...form, snf_percentage: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* Row 4: Rate and Payment Status */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Rate per Liter (₹) *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.rate_per_liter}
+                  onChange={(e) => setForm({ ...form, rate_per_liter: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Payment Status</Label>
+                <Select
+                  value={form.payment_status}
+                  onValueChange={(value) => setForm({ ...form, payment_status: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Total Amount Display */}
+            {form.quantity_liters && form.rate_per_liter && (
+              <div className="p-3 rounded-lg bg-muted/50 border">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Total Amount</span>
+                  <span className="text-xl font-bold">
+                    ₹{parseFloat(calculateTotal(form.quantity_liters, form.rate_per_liter)).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Row 5: Notes (full width) */}
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea
+                placeholder="Any additional notes..."
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                rows={2}
+              />
+            </div>
+          </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
