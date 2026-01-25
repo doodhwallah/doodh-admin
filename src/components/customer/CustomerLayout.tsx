@@ -35,13 +35,20 @@ export function CustomerLayout() {
       <header className="sticky top-0 z-40 bg-primary text-primary-foreground shadow-md">
         <div className="container py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold">Awadh Dairy</h1>
-              {customerData && (
-                <p className="text-sm text-primary-foreground/80">
-                  Hello, {customerData.name}
-                </p>
-              )}
+            <div className="flex items-center gap-3">
+              <img 
+                src="/images/awadh-dairy-logo.png" 
+                alt="Awadh Dairy" 
+                className="h-10 w-10 object-contain bg-white rounded-lg p-1"
+              />
+              <div>
+                <h1 className="text-xl font-bold">Awadh Dairy</h1>
+                {customerData && (
+                  <p className="text-sm text-primary-foreground/80">
+                    Hello, {customerData.name}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>

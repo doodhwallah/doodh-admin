@@ -238,7 +238,14 @@ export function MobileNavbar({ onLogout }: MobileNavbarProps) {
         >
           <SheetHeader className="px-5 pt-5 pb-3">
             <div className="flex items-center justify-between">
-              <SheetTitle className="text-sidebar-foreground text-xl font-semibold">Menu</SheetTitle>
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/images/awadh-dairy-logo.png" 
+                  alt="Awadh Dairy" 
+                  className="h-10 w-10 object-contain"
+                />
+                <SheetTitle className="text-sidebar-foreground text-lg font-semibold">Awadh Dairy</SheetTitle>
+              </div>
               <SheetClose asChild>
                 <Button 
                   variant="ghost" 

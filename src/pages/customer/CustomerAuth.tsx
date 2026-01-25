@@ -134,10 +134,12 @@ export default function CustomerAuth() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/10 via-background to-primary/5 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-center gap-3 py-8">
-        <div className="bg-primary rounded-full p-3">
-          <Milk className="h-8 w-8 text-primary-foreground" />
-        </div>
+      <div className="flex items-center justify-center gap-4 py-8">
+        <img 
+          src="/images/awadh-dairy-logo.png" 
+          alt="Awadh Dairy" 
+          className="h-16 w-16 object-contain"
+        />
         <div>
           <h1 className="text-2xl font-bold text-foreground">Awadh Dairy</h1>
           <p className="text-sm text-muted-foreground">Customer Portal</p>
