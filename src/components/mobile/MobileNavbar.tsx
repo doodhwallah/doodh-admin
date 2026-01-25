@@ -25,13 +25,15 @@ import {
   UsersRound,
   Milk,
   X,
+  Sun,
+  Moon,
+  User,
 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
   SheetClose,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,8 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState } from "react";
 import { triggerHaptic } from "@/hooks/useCapacitor";
+import { useTheme } from "next-themes";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface NavItem {
   title: string;
@@ -51,14 +55,14 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, section: "main" },
   { title: "Cattle", href: "/cattle", icon: Beef, section: "cattle" },
-  { title: "Production", href: "/production", icon: Droplets, section: "production" },
+  { title: "Milk Production", href: "/production", icon: Droplets, section: "production" },
   { title: "Products", href: "/products", icon: Milk, section: "main" },
   { title: "Customers", href: "/customers", icon: Users, section: "customers" },
   { title: "Deliveries", href: "/deliveries", icon: Truck, section: "deliveries" },
   { title: "Routes", href: "/routes", icon: MapPin, section: "deliveries" },
   { title: "Billing", href: "/billing", icon: Receipt, section: "billing" },
   { title: "Bottles", href: "/bottles", icon: Package, section: "bottles" },
-  { title: "Health", href: "/health", icon: Stethoscope, section: "health" },
+  { title: "Health Records", href: "/health", icon: Stethoscope, section: "health" },
   { title: "Breeding", href: "/breeding", icon: Baby, section: "health" },
   { title: "Inventory", href: "/inventory", icon: Wheat, section: "inventory" },
   { title: "Equipment", href: "/equipment", icon: Wrench, section: "inventory" },
@@ -69,7 +73,6 @@ const allNavItems: NavItem[] = [
   { title: "Users", href: "/users", icon: UsersRound, section: "users" },
   { title: "Notifications", href: "/notifications", icon: Bell, section: "notifications" },
   { title: "Audit Logs", href: "/audit-logs", icon: Activity, section: "audit" },
-  { title: "Settings", href: "/settings", icon: Settings, section: "settings" },
 ];
 
 // Define which sections each role can access
@@ -81,6 +84,20 @@ const roleSections: Record<string, string[]> = {
   farm_worker: ["main", "cattle", "production", "health", "inventory"],
   vet_staff: ["main", "cattle", "health"],
   auditor: ["main", "billing", "expenses", "reports", "audit"],
+};
+
+// Get role display name
+const getRoleDisplayName = (role: string | null): string => {
+  const roleNames: Record<string, string> = {
+    super_admin: "Super Admin",
+    manager: "Manager",
+    accountant: "Accountant",
+    delivery_staff: "Delivery Staff",
+    farm_worker: "Farm Worker",
+    vet_staff: "Vet Staff",
+    auditor: "Auditor",
+  };
+  return roleNames[role || ""] || "User";
 };
 
 // Primary nav items for bottom bar (max 4)
@@ -137,8 +154,9 @@ interface MobileNavbarProps {
 
 export function MobileNavbar({ onLogout }: MobileNavbarProps) {
   const location = useLocation();
-  const { role } = useUserRole();
+  const { role, userName } = useUserRole();
   const [open, setOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   // Get sections this role can access
   const allowedSections = role ? roleSections[role] || [] : [];
@@ -157,7 +175,17 @@ export function MobileNavbar({ onLogout }: MobileNavbarProps) {
 
   const handleMoreClick = () => {
     triggerHaptic('medium');
+    setOpen(true);
   };
+
+  const handleThemeToggle = () => {
+    triggerHaptic('light');
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
+
+  const userInitials = userName 
+    ? userName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : 'U';
 
   return (
     <>
@@ -184,85 +212,159 @@ export function MobileNavbar({ onLogout }: MobileNavbarProps) {
                 )}>
                   <item.icon className={cn("h-5 w-5", isActive && "text-primary")} />
                 </div>
-                <span className="font-medium">{item.title}</span>
+                <span className="font-medium">{item.title.split(' ')[0]}</span>
               </Link>
             );
           })}
           
-          {/* More Menu */}
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <button 
-                onClick={handleMoreClick}
-                className="flex flex-col items-center gap-0.5 px-3 py-2 text-[10px] text-muted-foreground touch-target relative"
-              >
-                <div className="flex items-center justify-center h-7 w-7 rounded-lg">
-                  <Menu className="h-5 w-5" />
-                </div>
-                <span className="font-medium">More</span>
-              </button>
-            </SheetTrigger>
-            <SheetContent side="bottom" className="h-[85vh] rounded-t-3xl">
-              <SheetHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <SheetTitle>Menu</SheetTitle>
-                  <SheetClose asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </SheetClose>
-                </div>
-              </SheetHeader>
-              
-              <ScrollArea className="h-[calc(85vh-120px)]">
-                <div className="grid grid-cols-3 gap-3 py-2">
-                  {visibleNavItems.map((item) => {
-                    const isActive = location.pathname === item.href;
-                    
-                    return (
-                      <Link
-                        key={item.href}
-                        to={item.href}
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setOpen(false);
-                        }}
-                        className={cn(
-                          "flex flex-col items-center gap-2 rounded-xl border p-4 transition-all duration-200 touch-target relative",
-                          isActive
-                            ? "border-primary bg-primary/5 text-primary"
-                            : "border-border bg-card hover:bg-muted active:scale-95"
-                        )}
-                      >
-                        <item.icon className={cn("h-6 w-6", isActive && "text-primary")} />
-                        <span className="text-xs font-medium text-center leading-tight">{item.title}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-                
-                <Separator className="my-4" />
-                
-                {/* Logout button */}
-                {onLogout && (
-                  <Button
-                    variant="outline"
-                    className="w-full h-12 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      onLogout();
-                      setOpen(false);
-                    }}
-                  >
-                    <LogOut className="h-5 w-5 mr-2" />
-                    Logout
-                  </Button>
-                )}
-              </ScrollArea>
-            </SheetContent>
-          </Sheet>
+          {/* More Menu Trigger */}
+          <button 
+            onClick={handleMoreClick}
+            className="flex flex-col items-center gap-0.5 px-3 py-2 text-[10px] text-muted-foreground touch-target relative active:scale-95"
+          >
+            <div className="flex items-center justify-center h-7 w-7 rounded-lg">
+              <Menu className="h-5 w-5" />
+            </div>
+            <span className="font-medium">More</span>
+          </button>
         </div>
       </nav>
+
+      {/* Full Screen Menu Sheet */}
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent 
+          side="right" 
+          className="w-[85%] max-w-[320px] p-0 border-l border-border/50 bg-sidebar"
+        >
+          <SheetHeader className="px-5 pt-5 pb-3">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-sidebar-foreground text-xl font-semibold">Menu</SheetTitle>
+              <SheetClose asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-9 w-9 text-sidebar-foreground hover:bg-sidebar-accent"
+                  onClick={() => triggerHaptic('light')}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </SheetClose>
+            </div>
+          </SheetHeader>
+          
+          <Separator className="bg-sidebar-border" />
+          
+          <ScrollArea className="h-[calc(100vh-180px)] px-3">
+            <div className="flex flex-col gap-1 py-4">
+              {visibleNavItems.map((item) => {
+                const isActive = location.pathname === item.href;
+                
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-200 touch-target",
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-md"
+                        : "text-sidebar-foreground hover:bg-sidebar-accent active:scale-[0.98]"
+                    )}
+                  >
+                    <item.icon className={cn(
+                      "h-5 w-5 flex-shrink-0",
+                      isActive ? "text-primary-foreground" : "text-sidebar-foreground/80"
+                    )} />
+                    <span className="text-[15px] font-medium">{item.title}</span>
+                  </Link>
+                );
+              })}
+            </div>
+            
+            <Separator className="my-2 bg-sidebar-border" />
+            
+            {/* Theme Toggle */}
+            <div className="px-3 py-2">
+              <button
+                onClick={handleThemeToggle}
+                className="flex items-center gap-4 w-full px-4 py-3.5 rounded-xl border border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-200 active:scale-[0.98]"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="h-5 w-5 text-sidebar-foreground/80" />
+                ) : (
+                  <Moon className="h-5 w-5 text-sidebar-foreground/80" />
+                )}
+                <span className="text-[15px] font-medium">
+                  {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                </span>
+              </button>
+            </div>
+            
+            {/* Settings */}
+            <div className="px-3 py-1">
+              <Link
+                to="/settings"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-200 touch-target",
+                  location.pathname === "/settings"
+                    ? "bg-primary text-primary-foreground shadow-md"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent active:scale-[0.98]"
+                )}
+              >
+                <Settings className={cn(
+                  "h-5 w-5",
+                  location.pathname === "/settings" ? "text-primary-foreground" : "text-sidebar-foreground/80"
+                )} />
+                <span className="text-[15px] font-medium">Settings</span>
+              </Link>
+            </div>
+            
+            {/* Logout */}
+            {onLogout && (
+              <div className="px-3 py-1 pb-4">
+                <button
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    onLogout();
+                    setOpen(false);
+                  }}
+                  className="flex items-center gap-4 w-full px-4 py-3.5 rounded-xl text-destructive hover:bg-destructive/10 transition-all duration-200 active:scale-[0.98]"
+                >
+                  <LogOut className="h-5 w-5" />
+                  <span className="text-[15px] font-medium">Logout</span>
+                </button>
+              </div>
+            )}
+          </ScrollArea>
+          
+          {/* User Profile Section at Bottom */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-sidebar-border bg-sidebar safe-area-bottom">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10 border-2 border-sidebar-border">
+                <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-sm font-medium">
+                  {userInitials}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold text-sidebar-foreground truncate">
+                  {userName || 'User'}
+                </span>
+                <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
+                  <User className="h-3 w-3" />
+                  {getRoleDisplayName(role)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
