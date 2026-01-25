@@ -322,6 +322,7 @@ export function MilkProcurement() {
       // Invalidate expenses cache to reflect new entry
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["auto-expense-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["vendors"] });
 
       toast({
         title: "Payment recorded",

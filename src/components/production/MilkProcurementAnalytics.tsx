@@ -115,6 +115,8 @@ export function MilkProcurementAnalytics() {
     totalTransactions: 0,
     pendingPayments: 0,
     uniqueVendors: 0,
+    totalExpensed: 0,
+    expenseSync: 0,
   });
 
   const getDateRange = useCallback((range: DateRange) => {
@@ -164,6 +166,17 @@ export function MilkProcurementAnalytics() {
       .reduce((sum, r) => sum + (Number(r.total_amount) - Number(r.paid_amount || 0)), 0);
     const uniqueVendors = new Set(records.map(r => r.supplier_name)).size;
 
+    // Fetch expense data for sync tracking
+    const { data: expenseData } = await supabase
+      .from("expenses")
+      .select("amount, notes")
+      .like("notes", "[AUTO] milk_procurement:%")
+      .gte("expense_date", format(start, "yyyy-MM-dd"))
+      .lte("expense_date", format(end, "yyyy-MM-dd"));
+
+    const totalExpensed = expenseData?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+    const expenseSync = totalAmount > 0 ? (totalExpensed / totalAmount * 100) : 0;
+
     setSummaryStats({
       totalQuantity,
       totalAmount,
@@ -171,6 +184,8 @@ export function MilkProcurementAnalytics() {
       totalTransactions: records.length,
       pendingPayments,
       uniqueVendors,
+      totalExpensed,
+      expenseSync,
     });
 
     // Calculate daily trends
@@ -317,7 +332,7 @@ export function MilkProcurementAnalytics() {
       </div>
 
       {/* Summary Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="bg-gradient-to-br from-info/10 to-info/5 border-info/20">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -356,15 +371,15 @@ export function MilkProcurementAnalytics() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Active Vendors</p>
+                <p className="text-sm font-medium text-muted-foreground">Paid (Expensed)</p>
                 <p className="text-2xl font-bold text-success">
-                  {summaryStats.uniqueVendors}
+                  ₹{summaryStats.totalExpensed.toLocaleString()}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Unique suppliers
+                  {summaryStats.expenseSync.toFixed(0)}% synced
                 </p>
               </div>
-              <Users className="h-8 w-8 text-success/50" />
+              <TrendingUp className="h-8 w-8 text-success/50" />
             </div>
           </CardContent>
         </Card>
@@ -382,6 +397,23 @@ export function MilkProcurementAnalytics() {
                 </p>
               </div>
               <IndianRupee className="h-8 w-8 text-warning/50" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-muted/10 to-muted/5 border-muted/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Active Vendors</p>
+                <p className="text-2xl font-bold">
+                  {summaryStats.uniqueVendors}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Unique suppliers
+                </p>
+              </div>
+              <Users className="h-8 w-8 text-muted-foreground/50" />
             </div>
           </CardContent>
         </Card>

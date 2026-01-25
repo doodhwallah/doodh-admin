@@ -472,6 +472,7 @@ export function VendorManagement() {
         vendor={selectedVendor}
         open={detailDialogOpen}
         onOpenChange={setDetailDialogOpen}
+        onDataChanged={fetchVendors}
       />
 
       {/* Delete Confirmation */}

@@ -41,16 +41,18 @@ interface Expense {
 
 const categoryColors: Record<string, string> = {
   feed: "bg-success/10 text-success border-success/20",
-  medicine: "bg-info/10 text-info border-info/20",
-  salary: "bg-primary/10 text-primary border-primary/20",
+  milk_procurement: "bg-info/10 text-info border-info/20",
+  medicine: "bg-primary/10 text-primary border-primary/20",
+  salary: "bg-accent/10 text-accent border-accent/20",
   transport: "bg-warning/10 text-warning border-warning/20",
-  electricity: "bg-accent/10 text-accent border-accent/20",
-  maintenance: "bg-muted text-muted-foreground border-border",
+  electricity: "bg-muted text-muted-foreground border-border",
+  maintenance: "bg-secondary/10 text-secondary-foreground border-border",
   misc: "bg-secondary text-secondary-foreground border-border",
 };
 
 const categoryLabels: Record<string, string> = {
   feed: "Feed & Fodder",
+  milk_procurement: "Milk Procurement",
   medicine: "Medicine",
   salary: "Salary",
   transport: "Transport",
@@ -154,9 +156,12 @@ export default function ExpensesPage() {
     setDialogOpen(true);
   };
 
+  // Enhanced filter logic - milk_procurement is detected by notes pattern
   const filteredExpenses = categoryFilter === "all" 
     ? expenses 
-    : expenses.filter(e => e.category === categoryFilter);
+    : categoryFilter === "milk_procurement"
+    ? expenses.filter(e => e.notes?.includes("milk_procurement:"))
+    : expenses.filter(e => e.category === categoryFilter && !e.notes?.includes("milk_procurement:"));
 
   const monthlyExpenses = expenses.filter(e => {
     const date = new Date(e.expense_date);
@@ -169,8 +174,17 @@ export default function ExpensesPage() {
   const manualExpenses = expenses.filter(e => !e.notes?.startsWith("[AUTO]"));
   const autoTotal = autoExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
+  // Milk procurement expenses (detected by notes pattern)
+  const milkProcurementExpenses = expenses.filter(e => e.notes?.includes("milk_procurement:"));
+  const milkProcurementTotal = milkProcurementExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+
   const totalByCategory = expenses.reduce((acc, e) => {
-    acc[e.category] = (acc[e.category] || 0) + Number(e.amount);
+    // Special handling for milk procurement
+    if (e.notes?.includes("milk_procurement:")) {
+      acc["milk_procurement"] = (acc["milk_procurement"] || 0) + Number(e.amount);
+    } else {
+      acc[e.category] = (acc[e.category] || 0) + Number(e.amount);
+    }
     return acc;
   }, {} as Record<string, number>);
 
