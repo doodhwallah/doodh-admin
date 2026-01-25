@@ -1319,6 +1319,7 @@ export type Database = {
           total_amount: number
           updated_at: string | null
           vehicle_number: string | null
+          vendor_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -1341,6 +1342,7 @@ export type Database = {
           total_amount: number
           updated_at?: string | null
           vehicle_number?: string | null
+          vendor_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -1363,8 +1365,17 @@ export type Database = {
           total_amount?: number
           updated_at?: string | null
           vehicle_number?: string | null
+          vendor_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "milk_procurement_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "milk_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       milk_production: {
         Row: {
@@ -1412,6 +1423,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      milk_vendors: {
+        Row: {
+          account_number: string | null
+          address: string | null
+          bank_name: string | null
+          created_at: string
+          id: string
+          ifsc_code: string | null
+          is_active: boolean
+          name: string
+          notes: string | null
+          phone: string | null
+          updated_at: string
+          upi_id: string | null
+        }
+        Insert: {
+          account_number?: string | null
+          address?: string | null
+          bank_name?: string | null
+          created_at?: string
+          id?: string
+          ifsc_code?: string | null
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+          upi_id?: string | null
+        }
+        Update: {
+          account_number?: string | null
+          address?: string | null
+          bank_name?: string | null
+          created_at?: string
+          id?: string
+          ifsc_code?: string | null
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+          upi_id?: string | null
+        }
+        Relationships: []
       }
       notification_logs: {
         Row: {
