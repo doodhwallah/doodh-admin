@@ -38,7 +38,6 @@ import {
   Trash2,
   RefreshCw
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 
 interface MilkVendor {
@@ -246,7 +245,8 @@ export function MilkProcurement() {
     setSaving(true);
     const totalAmount = parseFloat(calculateTotal(form.quantity_liters, form.rate_per_liter));
 
-    const record = {
+    // Build base record with only editable fields
+    const baseRecord = {
       procurement_date: form.procurement_date,
       vendor_id: form.vendor_id,
       supplier_name: selectedVendor.name,
@@ -257,13 +257,21 @@ export function MilkProcurement() {
       snf_percentage: form.snf_percentage ? parseFloat(form.snf_percentage) : null,
       rate_per_liter: parseFloat(form.rate_per_liter),
       total_amount: totalAmount,
-      payment_status: form.payment_status,
-      paid_amount: 0,
-      payment_mode: null,
       vehicle_number: null,
       quality_grade: null,
       notes: form.notes ? `[${form.session.toUpperCase()}] ${form.notes}` : `[${form.session.toUpperCase()}]`,
     };
+
+    // For insert: initialize payment fields; for update: preserve existing payment data
+    const record = editingId
+      ? baseRecord // Don't overwrite payment fields on update
+      : {
+          ...baseRecord,
+          payment_status: "pending",
+          paid_amount: 0,
+          payment_mode: null,
+          payment_date: null,
+        };
 
     let error;
     if (editingId) {
@@ -625,18 +633,22 @@ export function MilkProcurement() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Truck className="h-5 w-5" />
-              {editingId ? "Edit Procurement" : "Record Milk Procurement"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingId ? "Update the procurement details" : "Enter details of externally procured milk"}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl w-[calc(100vw-1.5rem)] sm:w-full max-h-[90vh] h-[85vh] sm:h-auto flex flex-col min-h-0 p-0">
+          {/* Fixed Header */}
+          <div className="px-6 pt-6 pb-4 border-b shrink-0">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Truck className="h-5 w-5" />
+                {editingId ? "Edit Procurement" : "Record Milk Procurement"}
+              </DialogTitle>
+              <DialogDescription>
+                {editingId ? "Update the procurement details" : "Enter details of externally procured milk"}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+          {/* Scrollable Body - Native scroll for cross-platform reliability */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] px-6">
             <div className="space-y-4 py-4">
               {/* Row 1: Vendor and Date */}
               <div className="grid gap-4 sm:grid-cols-2">
@@ -725,7 +737,7 @@ export function MilkProcurement() {
                 </div>
               </div>
 
-              {/* Row 4: Rate and Payment Status */}
+              {/* Row 4: Rate and Payment Status (read-only when editing) */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Rate per Liter (₹) *</Label>
@@ -739,19 +751,32 @@ export function MilkProcurement() {
                 </div>
                 <div className="space-y-2">
                   <Label>Payment Status</Label>
-                  <Select
-                    value={form.payment_status}
-                    onValueChange={(value) => setForm({ ...form, payment_status: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
-                      <SelectItem value="paid">Paid</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {editingId ? (
+                    <div>
+                      <Input
+                        value={form.payment_status.charAt(0).toUpperCase() + form.payment_status.slice(1)}
+                        disabled
+                        className="bg-muted cursor-not-allowed"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Use the ₹ button to record payments
+                      </p>
+                    </div>
+                  ) : (
+                    <Select
+                      value={form.payment_status}
+                      onValueChange={(value) => setForm({ ...form, payment_status: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="partial">Partial</SelectItem>
+                        <SelectItem value="paid">Paid</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
 
@@ -778,16 +803,19 @@ export function MilkProcurement() {
                 />
               </div>
             </div>
-          </ScrollArea>
+          </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t mt-auto">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {editingId ? "Update" : "Save Procurement"}
-            </Button>
+          {/* Fixed Footer - Always visible */}
+          <div className="px-6 py-4 border-t bg-background shrink-0">
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {editingId ? "Update" : "Save Procurement"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
