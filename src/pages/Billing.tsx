@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
@@ -23,10 +23,11 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Receipt, IndianRupee, Loader2, Plus, Trash2 } from "lucide-react";
+import { Receipt, IndianRupee, Loader2, Plus, Trash2, Calculator, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { InvoicePDFGenerator } from "@/components/billing/InvoicePDFGenerator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Customer {
   id: string;
@@ -50,6 +51,7 @@ interface LineItem {
   rate: number;
   tax_percentage: number;
   amount: number;
+  source?: 'delivery' | 'subscription' | 'manual';
 }
 
 interface Invoice {
@@ -74,6 +76,15 @@ interface InvoiceWithCustomer extends Invoice {
   customer: Customer;
 }
 
+interface DeliveryItemAggregated {
+  product_id: string;
+  product_name: string;
+  unit: string;
+  total_quantity: number;
+  unit_price: number;
+  tax_percentage: number;
+}
+
 export default function BillingPage() {
   const [invoices, setInvoices] = useState<InvoiceWithCustomer[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -84,6 +95,8 @@ export default function BillingPage() {
   const [saving, setSaving] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceWithCustomer | null>(null);
+  const [calculatingItems, setCalculatingItems] = useState(false);
+  const [deliveryCount, setDeliveryCount] = useState(0);
   
   // Form state
   const [customerId, setCustomerId] = useState("");
@@ -150,6 +163,160 @@ export default function BillingPage() {
     return `INV-${year}${month}-${random}`;
   };
 
+  /**
+   * Auto-calculate line items from delivered products in the billing period
+   * Falls back to subscription data if no delivery items found
+   */
+  const autoCalculateFromDeliveries = useCallback(async () => {
+    if (!customerId || !periodStart || !periodEnd) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a customer and billing period first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCalculatingItems(true);
+    
+    try {
+      // Fetch delivered items for the customer in the period
+      const { data: deliveries, error: deliveryError } = await supabase
+        .from("deliveries")
+        .select(`
+          id,
+          delivery_date,
+          status,
+          delivery_items (
+            product_id,
+            quantity,
+            unit_price,
+            total_amount,
+            products (id, name, unit, tax_percentage)
+          )
+        `)
+        .eq("customer_id", customerId)
+        .eq("status", "delivered")
+        .gte("delivery_date", periodStart)
+        .lte("delivery_date", periodEnd);
+
+      if (deliveryError) throw deliveryError;
+
+      // Aggregate items by product
+      const itemsMap = new Map<string, DeliveryItemAggregated>();
+      
+      deliveries?.forEach(delivery => {
+        (delivery.delivery_items || []).forEach((item: any) => {
+          const product = item.products;
+          if (!product) return;
+          
+          const existing = itemsMap.get(item.product_id);
+          if (existing) {
+            existing.total_quantity += Number(item.quantity);
+          } else {
+            itemsMap.set(item.product_id, {
+              product_id: item.product_id,
+              product_name: product.name,
+              unit: product.unit || "unit",
+              total_quantity: Number(item.quantity),
+              unit_price: Number(item.unit_price),
+              tax_percentage: Number(product.tax_percentage) || 0,
+            });
+          }
+        });
+      });
+
+      setDeliveryCount(deliveries?.length || 0);
+
+      // If no delivery items, fall back to subscriptions
+      if (itemsMap.size === 0) {
+        const { data: subscriptions, error: subError } = await supabase
+          .from("customer_products")
+          .select(`
+            product_id,
+            quantity,
+            custom_price,
+            products (id, name, base_price, unit, tax_percentage)
+          `)
+          .eq("customer_id", customerId)
+          .eq("is_active", true);
+
+        if (subError) throw subError;
+
+        // Calculate number of days in period for subscription estimation
+        const startDate = new Date(periodStart);
+        const endDate = new Date(periodEnd);
+        const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+        subscriptions?.forEach((sub: any) => {
+          const product = sub.products;
+          if (!product) return;
+          
+          const price = sub.custom_price || product.base_price;
+          const estimatedQty = Number(sub.quantity) * daysDiff;
+          
+          itemsMap.set(sub.product_id, {
+            product_id: sub.product_id,
+            product_name: product.name,
+            unit: product.unit || "unit",
+            total_quantity: estimatedQty,
+            unit_price: price,
+            tax_percentage: Number(product.tax_percentage) || 0,
+          });
+        });
+
+        if (itemsMap.size > 0) {
+          toast({
+            title: "Using Subscription Data",
+            description: `No deliveries found. Estimated from ${daysDiff} days of active subscriptions.`,
+          });
+        }
+      }
+
+      if (itemsMap.size === 0) {
+        toast({
+          title: "No Data Found",
+          description: "No deliveries or subscriptions found for this period. Add items manually.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Convert to line items
+      const calculatedItems: LineItem[] = Array.from(itemsMap.values()).map((item) => {
+        const baseAmount = item.total_quantity * item.unit_price;
+        const taxAmount = (baseAmount * item.tax_percentage) / 100;
+        return {
+          id: crypto.randomUUID(),
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: item.total_quantity,
+          unit: item.unit,
+          rate: item.unit_price,
+          tax_percentage: item.tax_percentage,
+          amount: baseAmount + taxAmount,
+          source: deliveries?.length ? 'delivery' as const : 'subscription' as const,
+        };
+      });
+
+      setLineItems(calculatedItems);
+      
+      toast({
+        title: "Items Calculated",
+        description: `${calculatedItems.length} product(s) from ${deliveries?.length || 0} deliveries. Review and edit as needed.`,
+      });
+    } catch (error: any) {
+      console.error("Error calculating items:", error);
+      toast({
+        title: "Calculation Error",
+        description: error.message || "Failed to calculate items from deliveries",
+        variant: "destructive",
+      });
+    } finally {
+      setCalculatingItems(false);
+    }
+  }, [customerId, periodStart, periodEnd, toast]);
+
   const addLineItem = () => {
     const newItem: LineItem = {
       id: crypto.randomUUID(),
@@ -160,6 +327,7 @@ export default function BillingPage() {
       rate: 0,
       tax_percentage: 0,
       amount: 0,
+      source: 'manual',
     };
     setLineItems([...lineItems, newItem]);
   };
@@ -268,6 +436,7 @@ export default function BillingPage() {
     setPeriodEnd(format(new Date(), "yyyy-MM-dd"));
     setLineItems([]);
     setDiscountAmount(0);
+    setDeliveryCount(0);
   };
 
   const handleRecordPayment = async () => {
@@ -477,7 +646,7 @@ export default function BillingPage() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Create Invoice</DialogTitle>
-            <DialogDescription>Add products with quantity and rate to generate invoice</DialogDescription>
+            <DialogDescription>Auto-calculate from deliveries or add items manually</DialogDescription>
           </DialogHeader>
 
           <ScrollArea className="flex-1 pr-4">
@@ -516,6 +685,39 @@ export default function BillingPage() {
                   />
                 </div>
               </div>
+
+              {/* Auto-Calculate Button */}
+              <Alert className="bg-primary/5 border-primary/20">
+                <Calculator className="h-4 w-4" />
+                <AlertDescription className="flex items-center justify-between">
+                  <span className="text-sm">
+                    Auto-calculate items from delivered products & subscriptions
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={autoCalculateFromDeliveries}
+                    disabled={!customerId || calculatingItems}
+                    className="ml-4 gap-2"
+                  >
+                    {calculatingItems ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    {calculatingItems ? "Calculating..." : "Auto Calculate"}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+
+              {/* Delivery Count Info */}
+              {deliveryCount > 0 && lineItems.length > 0 && (
+                <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                  <span className="font-medium text-foreground">{deliveryCount}</span> deliveries found • 
+                  <span className="font-medium text-foreground ml-1">{lineItems.length}</span> product(s) aggregated • 
+                  <span className="text-primary ml-1">Edit quantities/rates as needed</span>
+                </div>
+              )}
 
               {/* Line Items Section */}
               <div className="space-y-3">
@@ -608,8 +810,9 @@ export default function BillingPage() {
 
                 {lineItems.length === 0 && (
                   <div className="text-center py-8 border border-dashed rounded-lg text-muted-foreground">
-                    <p>No items added yet</p>
-                    <p className="text-sm">Click "Add Item" to add products to this invoice</p>
+                    <Calculator className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="font-medium">No items added yet</p>
+                    <p className="text-sm">Click "Auto Calculate" to fetch from deliveries, or add items manually</p>
                   </div>
                 )}
               </div>
