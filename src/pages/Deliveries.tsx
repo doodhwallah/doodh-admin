@@ -24,9 +24,10 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Truck, CheckCircle, XCircle, Clock, Loader2, Calendar, Zap, Palmtree } from "lucide-react";
+import { Truck, CheckCircle, XCircle, Clock, Loader2, Calendar, Zap, Palmtree, PackagePlus } from "lucide-react";
 import { format } from "date-fns";
 import { BulkDeliveryActions } from "@/components/deliveries/BulkDeliveryActions";
+import { AddonDeliveryDialog } from "@/components/deliveries/AddonDeliveryDialog";
 import { Badge } from "@/components/ui/badge";
 
 interface Customer {
@@ -55,6 +56,7 @@ export default function DeliveriesPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [addonDialogOpen, setAddonDialogOpen] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -69,8 +71,12 @@ export default function DeliveriesPage() {
 
   useEffect(() => {
     fetchData();
-    if (searchParams.get("action") === "add") {
+    const action = searchParams.get("action");
+    if (action === "add") {
       setDialogOpen(true);
+      setSearchParams({});
+    } else if (action === "addon") {
+      setAddonDialogOpen(true);
       setSearchParams({});
     }
   }, [searchParams, selectedDate]);
@@ -434,6 +440,13 @@ export default function DeliveriesPage() {
         pendingDeliveries={pendingDeliveries}
         open={bulkDialogOpen}
         onOpenChange={setBulkDialogOpen}
+        onComplete={fetchData}
+      />
+
+      {/* Addon Delivery Dialog */}
+      <AddonDeliveryDialog
+        open={addonDialogOpen}
+        onOpenChange={setAddonDialogOpen}
         onComplete={fetchData}
       />
     </div>

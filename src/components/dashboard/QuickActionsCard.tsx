@@ -3,14 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { 
-  Plus, 
   Droplets, 
-  Truck, 
   Receipt, 
   Beef, 
   Users,
   Zap,
-  ShoppingCart
+  ShoppingCart,
+  PackagePlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,11 +29,11 @@ const quickActions = [
     bgColor: "bg-purple-500/10 hover:bg-purple-500/20",
   },
   {
-    title: "New Delivery",
-    icon: Truck,
-    href: "/deliveries?action=add",
-    color: "text-warning",
-    bgColor: "bg-warning/10 hover:bg-warning/20",
+    title: "Addon Delivery",
+    icon: PackagePlus,
+    href: "/deliveries?action=addon",
+    color: "text-orange-500",
+    bgColor: "bg-orange-500/10 hover:bg-orange-500/20",
   },
   {
     title: "Create Invoice",

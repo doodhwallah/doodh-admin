@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Droplets, Stethoscope, Truck, DollarSign, X } from "lucide-react";
+import { Plus, Droplets, Stethoscope, PackagePlus, DollarSign, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -33,9 +33,9 @@ const quickActions: QuickAction[] = [
     roles: ["super_admin", "manager", "farm_worker", "vet_staff"] 
   },
   { 
-    label: "New Delivery", 
-    icon: Truck, 
-    href: "/deliveries", 
+    label: "Addon Delivery", 
+    icon: PackagePlus, 
+    href: "/deliveries?action=addon", 
     roles: ["super_admin", "manager", "delivery_staff"] 
   },
   { 
