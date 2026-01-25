@@ -2061,6 +2061,35 @@ export type Database = {
     }
     Functions: {
       auto_create_daily_attendance: { Args: never; Returns: undefined }
+      create_ledger_entry_atomic: {
+        Args: {
+          p_credit?: number
+          p_customer_id: string
+          p_debit?: number
+          p_description: string
+          p_reference_id?: string
+          p_transaction_type: string
+        }
+        Returns: {
+          created_at: string | null
+          created_by: string | null
+          credit_amount: number | null
+          customer_id: string
+          debit_amount: number | null
+          description: string
+          id: string
+          reference_id: string | null
+          running_balance: number | null
+          transaction_date: string
+          transaction_type: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "customer_ledger"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       has_any_role: {
         Args: {
           _roles: Database["public"]["Enums"]["user_role"][]
@@ -2081,6 +2110,64 @@ export type Database = {
         Returns: boolean
       }
       is_manager_or_admin: { Args: { _user_id: string }; Returns: boolean }
+      record_advance_payment_atomic: {
+        Args: { p_amount: number; p_customer_id: string; p_notes?: string }
+        Returns: {
+          created_at: string | null
+          created_by: string | null
+          credit_amount: number | null
+          customer_id: string
+          debit_amount: number | null
+          description: string
+          id: string
+          reference_id: string | null
+          running_balance: number | null
+          transaction_date: string
+          transaction_type: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "customer_ledger"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      record_procurement_payment: {
+        Args: {
+          p_payment_amount: number
+          p_payment_mode: string
+          p_procurement_id: string
+        }
+        Returns: {
+          created_at: string | null
+          fat_percentage: number | null
+          id: string
+          notes: string | null
+          paid_amount: number | null
+          payment_date: string | null
+          payment_mode: string | null
+          payment_status: string
+          procurement_date: string
+          quality_grade: string | null
+          quantity_liters: number
+          rate_per_liter: number
+          recorded_by: string | null
+          snf_percentage: number | null
+          supplier_address: string | null
+          supplier_name: string
+          supplier_phone: string | null
+          total_amount: number
+          updated_at: string | null
+          vehicle_number: string | null
+          vendor_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "milk_procurement"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       register_customer_account: {
         Args: { _phone: string; _pin: string }
         Returns: Json

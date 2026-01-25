@@ -53,10 +53,11 @@ export default function Auth() {
   const handleBootstrap = async () => {
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     
-    if (cleanPhone !== '7897716792' || pin !== '101101') {
+    // Validate basic input format without exposing expected credentials
+    if (cleanPhone.length !== 10 || pin.length !== 6) {
       toast({
         title: "Invalid credentials",
-        description: "Only the designated admin can bootstrap the account.",
+        description: "Please enter valid admin credentials.",
         variant: "destructive",
       });
       return;
@@ -125,19 +126,11 @@ export default function Auth() {
     setLoading(false);
 
     if (error) {
-      // If login fails and this is the admin phone, offer to bootstrap
-      if (cleanPhone === '7897716792' && pin === '101101') {
-        toast({
-          title: "Account not found",
-          description: "Click 'Setup Admin Account' to create your admin account.",
-        });
-      } else {
-        toast({
-          title: "Login failed",
-          description: sanitizeError(error, "Invalid mobile number or PIN. Please try again."),
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Login failed",
+        description: sanitizeError(error, "Invalid mobile number or PIN. Please try again."),
+        variant: "destructive",
+      });
     } else {
       toast({
         title: "Welcome back!",
@@ -153,15 +146,17 @@ export default function Auth() {
     await handleLogin();
   };
 
+  // Show bootstrap button only when valid phone/PIN format is entered
+  // Actual credential validation happens server-side
   const cleanPhone = phone.replace(/[^0-9]/g, '');
-  const isAdminCredentials = cleanPhone === '7897716792' && pin === '101101';
+  const showBootstrapOption = cleanPhone.length === 10 && pin.length === 6;
 
   return (
     <div className="flex min-h-screen">
       {/* Left side - Branding */}
       <div className="hidden w-1/2 gradient-hero lg:flex lg:flex-col lg:items-center lg:justify-center lg:p-12">
         <div className="max-w-md text-center animate-fade-in">
-          <img 
+          <img
             src="/images/awadh-dairy-logo.png" 
             alt="Awadh Dairy" 
             className="mx-auto mb-6 h-32 w-32 object-contain drop-shadow-xl"
@@ -256,7 +251,7 @@ export default function Auth() {
                 )}
               </Button>
 
-              {isAdminCredentials && (
+              {showBootstrapOption && (
                 <Button 
                   type="button" 
                   variant="outline" 
@@ -270,7 +265,7 @@ export default function Auth() {
                       Setting up...
                     </>
                   ) : (
-                    "Setup Admin Account"
+                    "First-Time Setup"
                   )}
                 </Button>
               )}

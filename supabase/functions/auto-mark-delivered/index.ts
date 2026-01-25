@@ -1,9 +1,18 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// CORS with origin validation
+const ALLOWED_ORIGINS = [
+  'https://doodhwallah.lovable.app',
+  Deno.env.get('APP_URL'),
+].filter(Boolean);
+
+function getCorsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0] || '*';
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
 
 interface AutoMarkResult {
   date: string;
@@ -18,6 +27,9 @@ interface AutoMarkResult {
 type AnySupabaseClient = SupabaseClient<any, any, any>;
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });

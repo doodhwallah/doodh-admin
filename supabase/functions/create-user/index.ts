@@ -1,12 +1,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+// CORS with origin validation
+const ALLOWED_ORIGINS = [
+  'https://doodhwallah.lovable.app',
+  Deno.env.get('APP_URL'),
+].filter(Boolean);
+
+function getCorsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0] || '*';
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
 }
 
+// Phone validation regex for Indian mobile numbers
+const PHONE_REGEX = /^[6-9]\d{9}$/;
+
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -62,6 +77,14 @@ serve(async (req) => {
     if (!phone || !pin || !fullName || !role) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields: phone, pin, fullName, role' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Validate phone format
+    if (!PHONE_REGEX.test(phone)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid phone number format. Must be 10 digits starting with 6-9.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
