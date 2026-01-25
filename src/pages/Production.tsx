@@ -18,7 +18,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { MilkHistoryDialog } from "@/components/production/MilkHistoryDialog";
 import { MilkProcurement } from "@/components/production/MilkProcurement";
-import { Droplets, Sun, Moon, Loader2, History, Truck } from "lucide-react";
+import { VendorManagement } from "@/components/production/VendorManagement";
+import { Droplets, Sun, Moon, Loader2, History, Truck, Users } from "lucide-react";
 import { format } from "date-fns";
 
 interface Cattle {
@@ -61,7 +62,7 @@ export default function ProductionPage() {
   const [selectedCattleId, setSelectedCattleId] = useState<string>("");
   const [selectedCattleName, setSelectedCattleName] = useState<string>("");
   const [sessionFilter, setSessionFilter] = useState<"morning" | "evening" | "total">("total");
-  const [activeTab, setActiveTab] = useState<"own" | "procurement">("own");
+  const [activeTab, setActiveTab] = useState<"own" | "procurement" | "vendors">("own");
 
   useEffect(() => {
     fetchData();
@@ -284,15 +285,19 @@ export default function ProductionPage() {
       />
 
       {/* Tabs for Own Production vs Procurement */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "own" | "procurement")}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "own" | "procurement" | "vendors")}>
+        <TabsList className="grid w-full max-w-lg grid-cols-3">
           <TabsTrigger value="own" className="gap-2">
             <Droplets className="h-4 w-4" />
             Own Production
           </TabsTrigger>
           <TabsTrigger value="procurement" className="gap-2">
             <Truck className="h-4 w-4" />
-            External Procurement
+            Procurement
+          </TabsTrigger>
+          <TabsTrigger value="vendors" className="gap-2">
+            <Users className="h-4 w-4" />
+            Vendors
           </TabsTrigger>
         </TabsList>
 
@@ -363,6 +368,10 @@ export default function ProductionPage() {
 
         <TabsContent value="procurement" className="mt-6">
           <MilkProcurement />
+        </TabsContent>
+
+        <TabsContent value="vendors" className="mt-6">
+          <VendorManagement />
         </TabsContent>
       </Tabs>
 

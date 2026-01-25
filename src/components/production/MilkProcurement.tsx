@@ -41,6 +41,13 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 
+interface MilkVendor {
+  id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+}
+
 interface MilkProcurement {
   id: string;
   procurement_date: string;
@@ -60,6 +67,7 @@ interface MilkProcurement {
   quality_grade: string | null;
   notes: string | null;
   created_at: string;
+  vendor_id: string | null;
 }
 
 interface ProcurementStats {
@@ -71,6 +79,7 @@ interface ProcurementStats {
 
 const emptyForm = {
   procurement_date: format(new Date(), "yyyy-MM-dd"),
+  vendor_id: "",
   supplier_name: "",
   supplier_phone: "",
   supplier_address: "",
@@ -87,6 +96,7 @@ const emptyForm = {
 };
 
 export function MilkProcurement() {
+  const [vendors, setVendors] = useState<MilkVendor[]>([]);
   const [procurements, setProcurements] = useState<MilkProcurement[]>([]);
   const [stats, setStats] = useState<ProcurementStats>({
     todayQuantity: 0,
@@ -107,6 +117,16 @@ export function MilkProcurement() {
   const { toast } = useToast();
   const { logMilkProcurementPayment } = useExpenseAutomation();
   const queryClient = useQueryClient();
+
+  // Fetch vendors
+  const fetchVendors = useCallback(async () => {
+    const { data } = await supabase
+      .from("milk_vendors")
+      .select("id, name, phone, address")
+      .eq("is_active", true)
+      .order("name");
+    setVendors(data || []);
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -146,7 +166,8 @@ export function MilkProcurement() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchVendors();
+  }, [fetchData, fetchVendors]);
 
   const calculateTotal = (quantity: string, rate: string) => {
     const qty = parseFloat(quantity) || 0;
@@ -169,6 +190,7 @@ export function MilkProcurement() {
 
     const record = {
       procurement_date: form.procurement_date,
+      vendor_id: form.vendor_id || null,
       supplier_name: form.supplier_name,
       supplier_phone: form.supplier_phone || null,
       supplier_address: form.supplier_address || null,
@@ -222,6 +244,7 @@ export function MilkProcurement() {
     setEditingId(procurement.id);
     setForm({
       procurement_date: procurement.procurement_date,
+      vendor_id: procurement.vendor_id || "",
       supplier_name: procurement.supplier_name,
       supplier_phone: procurement.supplier_phone || "",
       supplier_address: procurement.supplier_address || "",
@@ -540,7 +563,7 @@ export function MilkProcurement() {
 
           <ScrollArea className="max-h-[60vh] pr-4">
             <div className="space-y-4 py-4">
-              {/* Row 1: Date and Supplier */}
+              {/* Row 1: Date and Vendor Selection */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Date *</Label>
@@ -551,6 +574,42 @@ export function MilkProcurement() {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label>Select Vendor (Optional)</Label>
+                  <Select
+                    value={form.vendor_id}
+                    onValueChange={(value) => {
+                      const vendor = vendors.find(v => v.id === value);
+                      if (vendor) {
+                        setForm({
+                          ...form,
+                          vendor_id: value,
+                          supplier_name: vendor.name,
+                          supplier_phone: vendor.phone || "",
+                          supplier_address: vendor.address || "",
+                        });
+                      } else {
+                        setForm({ ...form, vendor_id: value });
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose from saved vendors" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">-- Manual Entry --</SelectItem>
+                      {vendors.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.name} {v.phone && `(${v.phone})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Row 2: Supplier Name (can be manual or auto-filled) */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
                   <Label>Supplier Name *</Label>
                   <Input
                     placeholder="Enter supplier name"
@@ -558,10 +617,6 @@ export function MilkProcurement() {
                     onChange={(e) => setForm({ ...form, supplier_name: e.target.value })}
                   />
                 </div>
-              </div>
-
-              {/* Row 2: Phone and Address */}
-              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1">
                     <Phone className="h-3 w-3" /> Phone
@@ -572,16 +627,18 @@ export function MilkProcurement() {
                     onChange={(e) => setForm({ ...form, supplier_phone: e.target.value })}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3" /> Address
-                  </Label>
-                  <Input
-                    placeholder="Supplier address"
-                    value={form.supplier_address}
-                    onChange={(e) => setForm({ ...form, supplier_address: e.target.value })}
-                  />
-                </div>
+              </div>
+
+              {/* Row 3: Address */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3" /> Address
+                </Label>
+                <Input
+                  placeholder="Supplier address"
+                  value={form.supplier_address}
+                  onChange={(e) => setForm({ ...form, supplier_address: e.target.value })}
+                />
               </div>
 
               {/* Row 3: Quantity, Rate, Vehicle */}
