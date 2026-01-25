@@ -14,10 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { MilkHistoryDialog } from "@/components/production/MilkHistoryDialog";
-import { Droplets, Sun, Moon, Loader2, History } from "lucide-react";
+import { MilkProcurement } from "@/components/production/MilkProcurement";
+import { Droplets, Sun, Moon, Loader2, History, Truck } from "lucide-react";
 import { format } from "date-fns";
 
 interface Cattle {
@@ -60,6 +61,7 @@ export default function ProductionPage() {
   const [selectedCattleId, setSelectedCattleId] = useState<string>("");
   const [selectedCattleName, setSelectedCattleName] = useState<string>("");
   const [sessionFilter, setSessionFilter] = useState<"morning" | "evening" | "total">("total");
+  const [activeTab, setActiveTab] = useState<"own" | "procurement">("own");
 
   useEffect(() => {
     fetchData();
@@ -273,76 +275,96 @@ export default function ProductionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Milk Production"
-        description="Track daily milk collection"
+        description="Track daily milk collection from own cattle and external procurement"
         icon={Droplets}
-        action={{
+        action={activeTab === "own" ? {
           label: "Record Production",
           onClick: handleOpenDialog,
-        }}
+        } : undefined}
       />
 
-      {/* Stats Cards - Now Clickable */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card 
-          className="bg-gradient-to-br from-info/10 to-info/5 border-info/20 cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => handleOpenDailyHistory("total")}
-        >
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Today's Total</p>
-                <p className="text-3xl font-bold text-info">{todayTotal} L</p>
-                <p className="text-xs text-muted-foreground mt-1">Click to view history</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-info/20">
-                <Droplets className="h-6 w-6 text-info" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card 
-          className="bg-gradient-to-br from-warning/10 to-warning/5 border-warning/20 cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => handleOpenDailyHistory("morning")}
-        >
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Morning Session</p>
-                <p className="text-3xl font-bold text-warning">{morningTotal} L</p>
-                <p className="text-xs text-muted-foreground mt-1">Click to view history</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-warning/20">
-                <Sun className="h-6 w-6 text-warning" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card 
-          className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => handleOpenDailyHistory("evening")}
-        >
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Evening Session</p>
-                <p className="text-3xl font-bold text-primary">{eveningTotal} L</p>
-                <p className="text-xs text-muted-foreground mt-1">Click to view history</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
-                <Moon className="h-6 w-6 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Tabs for Own Production vs Procurement */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "own" | "procurement")}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="own" className="gap-2">
+            <Droplets className="h-4 w-4" />
+            Own Production
+          </TabsTrigger>
+          <TabsTrigger value="procurement" className="gap-2">
+            <Truck className="h-4 w-4" />
+            External Procurement
+          </TabsTrigger>
+        </TabsList>
 
-      <DataTable
-        data={productions}
-        columns={columns}
-        loading={loading}
-        searchPlaceholder="Search by date, cattle..."
-        emptyMessage="No production records. Start recording milk production."
-      />
+        <TabsContent value="own" className="space-y-6 mt-6">
+          {/* Stats Cards - Now Clickable */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card 
+              className="bg-gradient-to-br from-info/10 to-info/5 border-info/20 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleOpenDailyHistory("total")}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Today's Total</p>
+                    <p className="text-3xl font-bold text-info">{todayTotal} L</p>
+                    <p className="text-xs text-muted-foreground mt-1">Click to view history</p>
+                  </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-info/20">
+                    <Droplets className="h-6 w-6 text-info" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card 
+              className="bg-gradient-to-br from-warning/10 to-warning/5 border-warning/20 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleOpenDailyHistory("morning")}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Morning Session</p>
+                    <p className="text-3xl font-bold text-warning">{morningTotal} L</p>
+                    <p className="text-xs text-muted-foreground mt-1">Click to view history</p>
+                  </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-warning/20">
+                    <Sun className="h-6 w-6 text-warning" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card 
+              className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleOpenDailyHistory("evening")}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Evening Session</p>
+                    <p className="text-3xl font-bold text-primary">{eveningTotal} L</p>
+                    <p className="text-xs text-muted-foreground mt-1">Click to view history</p>
+                  </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
+                    <Moon className="h-6 w-6 text-primary" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <DataTable
+            data={productions}
+            columns={columns}
+            loading={loading}
+            searchPlaceholder="Search by date, cattle..."
+            emptyMessage="No production records. Start recording milk production."
+          />
+        </TabsContent>
+
+        <TabsContent value="procurement" className="mt-6">
+          <MilkProcurement />
+        </TabsContent>
+      </Tabs>
 
       {/* Production Entry Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

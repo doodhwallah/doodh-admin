@@ -1297,6 +1297,75 @@ export type Database = {
           },
         ]
       }
+      milk_procurement: {
+        Row: {
+          created_at: string | null
+          fat_percentage: number | null
+          id: string
+          notes: string | null
+          paid_amount: number | null
+          payment_date: string | null
+          payment_mode: string | null
+          payment_status: string
+          procurement_date: string
+          quality_grade: string | null
+          quantity_liters: number
+          rate_per_liter: number
+          recorded_by: string | null
+          snf_percentage: number | null
+          supplier_address: string | null
+          supplier_name: string
+          supplier_phone: string | null
+          total_amount: number
+          updated_at: string | null
+          vehicle_number: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          fat_percentage?: number | null
+          id?: string
+          notes?: string | null
+          paid_amount?: number | null
+          payment_date?: string | null
+          payment_mode?: string | null
+          payment_status?: string
+          procurement_date: string
+          quality_grade?: string | null
+          quantity_liters: number
+          rate_per_liter: number
+          recorded_by?: string | null
+          snf_percentage?: number | null
+          supplier_address?: string | null
+          supplier_name: string
+          supplier_phone?: string | null
+          total_amount: number
+          updated_at?: string | null
+          vehicle_number?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          fat_percentage?: number | null
+          id?: string
+          notes?: string | null
+          paid_amount?: number | null
+          payment_date?: string | null
+          payment_mode?: string | null
+          payment_status?: string
+          procurement_date?: string
+          quality_grade?: string | null
+          quantity_liters?: number
+          rate_per_liter?: number
+          recorded_by?: string | null
+          snf_percentage?: number | null
+          supplier_address?: string | null
+          supplier_name?: string
+          supplier_phone?: string | null
+          total_amount?: number
+          updated_at?: string | null
+          vehicle_number?: string | null
+        }
+        Relationships: []
+      }
       milk_production: {
         Row: {
           cattle_id: string
