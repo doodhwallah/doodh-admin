@@ -1,212 +1,135 @@
 
-# Addon Delivery Feature Implementation Plan
+# Separating Milk Production from Milk Procurement
 
 ## Overview
-Replace the "New Delivery" quick action on the Dashboard with an "Addon Delivery" feature that allows staff to quickly record extra/addon products requested by customers outside their regular subscription. This feature will be fully integrated with the delivery system, billing, and ledger automation.
+Currently, both **Milk Production** (own cattle milk collection) and **Milk Procurement** (external vendor purchases) are combined in a single `/production` page with 4 tabs. This plan separates them into two distinct modules with their own navigation entries, pages, and dedicated functionality.
 
-## What is Addon Delivery?
-When a customer requests extra products beyond their regular daily subscription (e.g., "I need 2 extra liters of milk today" or "Add 1 kg paneer to today's delivery"), staff can use this quick action to:
-1. Select the customer
-2. Choose products and quantities
-3. Immediately record it as a delivered item
-4. Have it automatically reflect in billing and ledger
-
-## Current System Understanding
-- Regular deliveries are auto-scheduled based on `customer_products` (subscriptions)
-- `delivery_items` table links products to deliveries with quantity and pricing
-- Invoices aggregate `delivery_items` for billing periods
-- Customer ledger tracks all debits (deliveries) and credits (payments)
-
-## Implementation Plan
-
-### 1. Create AddonDeliveryDialog Component
-**New File:** `src/components/deliveries/AddonDeliveryDialog.tsx`
-
-This dialog will:
-- Allow customer selection (searchable dropdown)
-- Show the customer's current balance for quick reference
-- Allow adding multiple products with quantities
-- Auto-populate pricing from product base_price or customer's custom_price
-- Create both the delivery and delivery_items in a single transaction
-- Optionally mark as delivered immediately
-
-**Form Fields:**
-- Customer (required, searchable)
-- Delivery Date (defaults to today)
-- Products (multi-row):
-  - Product dropdown
-  - Quantity input
-  - Unit price (auto-filled, editable)
-- Notes (optional, for context like "Customer called at 2pm")
-- "Mark as Delivered" checkbox (default: checked)
-
-### 2. Update QuickActionsCard
-**File:** `src/components/dashboard/QuickActionsCard.tsx`
-
-Changes:
-- Replace "New Delivery" with "Addon Delivery"
-- Change icon from `Truck` to `PackagePlus` (more appropriate for addon)
-- Change href to `/deliveries?action=addon`
-- Update color scheme to distinguish from regular delivery
-
-### 3. Update QuickActionFab (Mobile)
-**File:** `src/components/mobile/QuickActionFab.tsx`
-
-Changes:
-- Replace "New Delivery" with "Addon Delivery"
-- Update href to `/deliveries?action=addon`
-
-### 4. Update Deliveries Page
-**File:** `src/pages/Deliveries.tsx`
-
-Changes:
-- Add state for addon dialog: `addonDialogOpen`
-- Handle URL param `?action=addon` to open addon dialog
-- Import and render `AddonDeliveryDialog` component
-- Keep existing "Add Delivery" for scheduling future deliveries
-
-### 5. Integration Points
-
-#### 5.1 Delivery Items Creation
-When addon is saved:
-```typescript
-// 1. Create delivery record
-const { data: delivery } = await supabase.from("deliveries").insert({
-  customer_id,
-  delivery_date,
-  status: "delivered", // Mark as delivered immediately
-  delivery_time: new Date().toISOString(),
-  notes: `[ADDON] ${notes}`,
-}).select().single();
-
-// 2. Create delivery items
-const deliveryItems = selectedProducts.map(p => ({
-  delivery_id: delivery.id,
-  product_id: p.product_id,
-  quantity: p.quantity,
-  unit_price: p.unit_price,
-  total_amount: p.quantity * p.unit_price,
-}));
-await supabase.from("delivery_items").insert(deliveryItems);
+## Current Structure
+```text
+/production (single page with 4 tabs)
+├── Tab 1: Own Production  → Own cattle milk tracking
+├── Tab 2: Procurement     → External vendor purchases
+├── Tab 3: Vendors         → Vendor management
+└── Tab 4: Analytics       → Procurement analytics
 ```
 
-#### 5.2 Ledger Automation (Existing Hook)
-The existing `useLedgerAutomation` hook already handles ledger entries for deliveries. When a delivery with items is marked as "delivered", it creates the appropriate debit entry in `customer_ledger`.
+## Proposed New Structure
+```text
+/production (dedicated page with 2 tabs)
+├── Tab 1: Daily Collection → Own cattle milk tracking
+└── Tab 2: History          → Historical production data
 
-#### 5.3 Billing Integration
-No changes needed - the existing billing system already aggregates all `delivery_items` for a billing period, so addon deliveries will automatically be included in invoices.
+/procurement (NEW dedicated page with 3 tabs)
+├── Tab 1: Daily Entries   → External milk purchases
+├── Tab 2: Vendors         → Vendor management
+└── Tab 3: Analytics       → Procurement analytics
+```
 
-### 6. Visual Identification of Addon Deliveries
-In the Deliveries list and other views:
-- Addon deliveries will have `[ADDON]` prefix in notes
-- Add a badge "Addon" to distinguish from regular subscription deliveries
+---
+
+## Implementation Steps
+
+### Step 1: Create New Procurement Page
+Create a new dedicated page at `src/pages/Procurement.tsx` that will house:
+- **Daily Entries Tab**: The current `MilkProcurement` component for recording vendor milk purchases
+- **Vendors Tab**: The current `VendorManagement` component for managing vendor details
+- **Analytics Tab**: The current `MilkProcurementAnalytics` component for visualizations
+
+The page will have its own header with the title "Milk Procurement" and description emphasizing external vendor purchases.
+
+### Step 2: Simplify Production Page
+Modify `src/pages/Production.tsx` to:
+- Remove the 4-tab structure, focusing only on own production
+- Keep the stats cards (Today's Total, Morning Session, Evening Session)
+- Keep the production data table and recording dialog
+- Keep the milk history dialog functionality
+- Remove imports for `MilkProcurement`, `VendorManagement`, and `MilkProcurementAnalytics`
+
+### Step 3: Add New Route
+Update `src/App.tsx` to add the new route:
+```tsx
+<Route path="/procurement" element={<ProcurementPage />} />
+```
+
+### Step 4: Update Navigation
+**Sidebar (`AppSidebar.tsx`)**:
+- Keep "Milk Production" pointing to `/production`
+- Add new "Milk Procurement" entry pointing to `/procurement` with a `ShoppingCart` or `Truck` icon
+- Both items will be in the "production" section for role-based access
+
+**Mobile Navbar (`MobileNavbar.tsx`)**:
+- Add matching navigation entry for mobile users
+
+### Step 5: Update Quick Actions
+Modify `QuickActionsCard.tsx`:
+- Change "Procurement" action from `/production?tab=procurement` to `/procurement`
+
+### Step 6: Update Deep Links
+Fix any URL parameters that reference the old tab structure:
+- `?tab=procurement` links should point to `/procurement`
+- The `?action=add` parameter on Production page remains unchanged
+
+---
+
+## Files to be Modified
+
+| File | Changes |
+|------|---------|
+| `src/pages/Procurement.tsx` | **NEW** - Dedicated procurement page with Vendors & Analytics tabs |
+| `src/pages/Production.tsx` | Remove procurement tabs, simplify to own production only |
+| `src/App.tsx` | Add route for `/procurement` |
+| `src/components/layout/AppSidebar.tsx` | Add "Milk Procurement" nav item |
+| `src/components/mobile/MobileNavbar.tsx` | Add "Milk Procurement" nav item |
+| `src/components/dashboard/QuickActionsCard.tsx` | Update Procurement link to `/procurement` |
+| `src/hooks/useUserRole.ts` | Verify "production" section permissions cover procurement |
 
 ---
 
 ## Technical Details
 
-### AddonDeliveryDialog Component Structure
-
+### New Navigation Item
 ```typescript
-interface AddonProduct {
-  id: string;
-  product_id: string;
-  product_name: string;
-  quantity: number;
-  unit: string;
-  unit_price: number;
-  total: number;
-}
-
-interface AddonDeliveryDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onComplete: () => void;
-  preselectedCustomerId?: string;
-}
+{ title: "Milk Procurement", href: "/procurement", icon: ShoppingCart, section: "production" }
 ```
 
-### Database Flow
+By using `section: "production"`, all existing role permissions for the production section automatically apply to procurement as well:
+- `super_admin`, `manager`, `farm_worker` will have access
 
-```text
-User Action: "Add Addon Delivery"
-         |
-         v
-+-------------------+
-| AddonDeliveryDialog|
-| - Select Customer |
-| - Add Products    |
-| - Set Quantities  |
-+-------------------+
-         |
-         v
-+-------------------+     +-------------------+
-| deliveries table  |---->| delivery_items    |
-| (status=delivered)|     | (product details) |
-+-------------------+     +-------------------+
-         |                         |
-         v                         v
-+-------------------+     +-------------------+
-| customer_ledger   |     | invoices (later)  |
-| (debit entry)     |     | (auto-included)   |
-+-------------------+     +-------------------+
+### New Page Structure (Procurement.tsx)
+```tsx
+// Tab structure for Procurement page
+<Tabs value={activeTab}>
+  <TabsList>
+    <TabsTrigger value="entries">Daily Entries</TabsTrigger>
+    <TabsTrigger value="vendors">Vendors</TabsTrigger>
+    <TabsTrigger value="analytics">Analytics</TabsTrigger>
+  </TabsList>
+  <TabsContent value="entries"><MilkProcurement /></TabsContent>
+  <TabsContent value="vendors"><VendorManagement /></TabsContent>
+  <TabsContent value="analytics"><MilkProcurementAnalytics /></TabsContent>
+</Tabs>
 ```
 
----
-
-## Files to Create
-
-| File | Purpose |
-|------|---------|
-| `src/components/deliveries/AddonDeliveryDialog.tsx` | Main addon delivery form dialog |
-
-## Files to Modify
-
-| File | Changes |
-|------|---------|
-| `src/components/dashboard/QuickActionsCard.tsx` | Replace "New Delivery" with "Addon Delivery" |
-| `src/components/mobile/QuickActionFab.tsx` | Replace "New Delivery" with "Addon Delivery" |
-| `src/pages/Deliveries.tsx` | Handle `?action=addon` param, render AddonDeliveryDialog |
+### URL Parameter Handling
+The new `/procurement` page will support:
+- `?tab=vendors` - Opens directly to Vendors tab
+- `?tab=analytics` - Opens directly to Analytics tab
+- Default opens to Daily Entries tab
 
 ---
 
-## User Experience Flow
+## Benefits of Separation
 
-1. **Staff sees customer request for extra products**
-2. **Opens Dashboard → Quick Actions → Addon Delivery**
-3. **Selects customer** (sees their current balance)
-4. **Adds products and quantities** (prices auto-filled)
-5. **Clicks "Add Addon"** 
-6. **System automatically:**
-   - Creates delivery record (marked as delivered)
-   - Creates delivery_items for each product
-   - Updates customer ledger with debit entry
-   - Shows success confirmation
-
-7. **At month-end billing:**
-   - Addon items appear in invoice automatically
-   - No manual reconciliation needed
+1. **Clearer Navigation**: Users immediately understand the difference between own production and external procurement
+2. **Better UX**: Each page is focused on its specific purpose
+3. **Scalability**: Easier to add features specific to each module
+4. **Permissions**: Can add separate role permissions for procurement if needed in the future
+5. **URL Sharing**: Direct links to procurement vs production are more intuitive
 
 ---
 
-## Differentiation: New Delivery vs Addon Delivery
+## Backward Compatibility
 
-| Aspect | New Delivery (Existing) | Addon Delivery (New) |
-|--------|------------------------|---------------------|
-| Purpose | Schedule future deliveries | Record instant extra products |
-| Status | Defaults to "pending" | Defaults to "delivered" |
-| Products | No items (uses subscription) | Explicit product selection |
-| Timing | Can be any date | Typically today |
-| Use Case | Planning | Field operations |
-| Notes | Optional | Tagged with [ADDON] |
-
----
-
-## Summary
-This implementation creates a streamlined workflow for recording addon/extra product deliveries that customers request on-demand. The feature integrates seamlessly with:
-- Delivery tracking (visible in delivery list with ADDON badge)
-- Billing system (auto-included in period invoices)
-- Customer ledger (immediate debit entry)
-- Mobile app (accessible via QuickActionFab)
-
-No existing automations or integrations will be affected - this adds a new entry point that flows through the established data pipeline.
+- Existing bookmarks to `/production` will continue to work (showing own production)
+- The old `?tab=procurement` parameter will be handled gracefully (redirect or ignore)
+- All existing data and functionality remain unchanged - this is purely a UI restructuring
