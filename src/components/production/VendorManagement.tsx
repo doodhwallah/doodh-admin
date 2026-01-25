@@ -25,7 +25,8 @@ import {
   Phone, 
   Eye,
   IndianRupee,
-  Loader2
+  Loader2,
+  RefreshCw
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -61,6 +62,7 @@ const emptyForm = {
 export function VendorManagement() {
   const [vendors, setVendors] = useState<MilkVendor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -70,51 +72,77 @@ export function VendorManagement() {
   const [form, setForm] = useState(emptyForm);
   const { toast } = useToast();
 
-  const fetchVendors = useCallback(async () => {
+  const fetchVendors = useCallback(async (retryCount = 0) => {
+    const maxRetries = 3;
     setLoading(true);
+    setFetchError(null);
     
-    // Fetch vendors
-    const { data: vendorData, error: vendorError } = await supabase
-      .from("milk_vendors")
-      .select("*")
-      .order("name");
+    try {
+      // Fetch vendors
+      const { data: vendorData, error: vendorError } = await supabase
+        .from("milk_vendors")
+        .select("*")
+        .order("name");
 
-    if (vendorError) {
+      if (vendorError) {
+        if (retryCount < maxRetries && vendorError.message?.includes('fetch')) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return fetchVendors(retryCount + 1);
+        }
+        setFetchError(vendorError.message || "Failed to load vendors");
+        toast({
+          title: "Error fetching vendors",
+          description: "Please check your connection and try again.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Fetch procurement summaries for each vendor
+      const { data: procurementData } = await supabase
+        .from("milk_procurement")
+        .select("vendor_id, total_amount, paid_amount");
+
+      const vendorStats: Record<string, { total: number; pending: number }> = {};
+      
+      (procurementData || []).forEach(p => {
+        if (p.vendor_id) {
+          if (!vendorStats[p.vendor_id]) {
+            vendorStats[p.vendor_id] = { total: 0, pending: 0 };
+          }
+          vendorStats[p.vendor_id].total += Number(p.total_amount) || 0;
+          vendorStats[p.vendor_id].pending += (Number(p.total_amount) || 0) - (Number(p.paid_amount) || 0);
+        }
+      });
+
+      const vendorsWithStats = (vendorData || []).map(v => ({
+        ...v,
+        total_procurement: vendorStats[v.id]?.total || 0,
+        pending_balance: vendorStats[v.id]?.pending || 0,
+      }));
+
+      setVendors(vendorsWithStats);
+      setLoading(false);
+    } catch (err) {
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return fetchVendors(retryCount + 1);
+      }
+      console.error("Unexpected error fetching vendors:", err);
+      setFetchError("Network error. Please check your connection.");
       toast({
-        title: "Error fetching vendors",
-        description: vendorError.message,
+        title: "Error",
+        description: "Failed to load vendors. Please try again.",
         variant: "destructive",
       });
       setLoading(false);
-      return;
     }
-
-    // Fetch procurement summaries for each vendor
-    const { data: procurementData } = await supabase
-      .from("milk_procurement")
-      .select("vendor_id, total_amount, paid_amount");
-
-    const vendorStats: Record<string, { total: number; pending: number }> = {};
-    
-    (procurementData || []).forEach(p => {
-      if (p.vendor_id) {
-        if (!vendorStats[p.vendor_id]) {
-          vendorStats[p.vendor_id] = { total: 0, pending: 0 };
-        }
-        vendorStats[p.vendor_id].total += Number(p.total_amount);
-        vendorStats[p.vendor_id].pending += Number(p.total_amount) - Number(p.paid_amount || 0);
-      }
-    });
-
-    const vendorsWithStats = (vendorData || []).map(v => ({
-      ...v,
-      total_procurement: vendorStats[v.id]?.total || 0,
-      pending_balance: vendorStats[v.id]?.pending || 0,
-    }));
-
-    setVendors(vendorsWithStats);
-    setLoading(false);
   }, [toast]);
+
+  const handleRetry = () => {
+    fetchVendors();
+  };
 
   useEffect(() => {
     fetchVendors();
@@ -360,13 +388,27 @@ export function VendorManagement() {
           </Button>
         </CardHeader>
         <CardContent>
-          <DataTable
-            data={vendors}
-            columns={columns}
-            searchable
-            loading={loading}
-            emptyMessage="No vendors found. Add your first vendor!"
-          />
+          {fetchError ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="text-destructive mb-4">
+                <Users className="h-12 w-12 mx-auto opacity-50" />
+              </div>
+              <p className="text-lg font-medium text-destructive mb-2">Failed to load vendors</p>
+              <p className="text-muted-foreground mb-4">{fetchError}</p>
+              <Button onClick={handleRetry} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <DataTable
+              data={vendors}
+              columns={columns}
+              searchable
+              loading={loading}
+              emptyMessage="No vendors found. Add your first vendor!"
+            />
+          )}
         </CardContent>
       </Card>
 

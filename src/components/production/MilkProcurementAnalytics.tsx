@@ -36,8 +36,11 @@ import {
   Beaker,
   Calendar,
   PieChartIcon,
-  BarChart3
+  BarChart3,
+  RefreshCw
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 interface ProcurementRecord {
   id: string;
@@ -98,6 +101,7 @@ const CHART_COLORS = [
 
 export function MilkProcurementAnalytics() {
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const [procurements, setProcurements] = useState<ProcurementRecord[]>([]);
   const [dailyTrends, setDailyTrends] = useState<DailyTrend[]>([]);
@@ -118,6 +122,7 @@ export function MilkProcurementAnalytics() {
     totalExpensed: 0,
     expenseSync: 0,
   });
+  const { toast } = useToast();
 
   const getDateRange = useCallback((range: DateRange) => {
     const today = new Date();
@@ -138,150 +143,181 @@ export function MilkProcurementAnalytics() {
     }
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (retryCount = 0) => {
+    const maxRetries = 3;
     setLoading(true);
+    setFetchError(null);
     const { start, end } = getDateRange(dateRange);
 
-    const { data, error } = await supabase
-      .from("milk_procurement")
-      .select("*")
-      .gte("procurement_date", format(start, "yyyy-MM-dd"))
-      .lte("procurement_date", format(end, "yyyy-MM-dd"))
-      .order("procurement_date", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("milk_procurement")
+        .select("*")
+        .gte("procurement_date", format(start, "yyyy-MM-dd"))
+        .lte("procurement_date", format(end, "yyyy-MM-dd"))
+        .order("procurement_date", { ascending: true });
 
-    if (error) {
-      console.error("Error fetching procurement data:", error);
+      if (error) {
+        if (retryCount < maxRetries && error.message?.includes('fetch')) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return fetchData(retryCount + 1);
+        }
+        console.error("Error fetching procurement data:", error);
+        setFetchError(error.message || "Failed to load analytics data");
+        toast({
+          title: "Error fetching analytics",
+          description: "Please check your connection and try again.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      const records = data || [];
+      setProcurements(records);
+
+      // Calculate summary stats
+      const totalQuantity = records.reduce((sum, r) => sum + (Number(r.quantity_liters) || 0), 0);
+      const totalAmount = records.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0);
+      const pendingPayments = records
+        .filter(r => r.payment_status !== "paid")
+        .reduce((sum, r) => sum + ((Number(r.total_amount) || 0) - (Number(r.paid_amount) || 0)), 0);
+      const uniqueVendors = new Set(records.map(r => r.supplier_name)).size;
+
+      // Fetch expense data for sync tracking
+      const { data: expenseData } = await supabase
+        .from("expenses")
+        .select("amount, notes")
+        .like("notes", "[AUTO] milk_procurement:%")
+        .gte("expense_date", format(start, "yyyy-MM-dd"))
+        .lte("expense_date", format(end, "yyyy-MM-dd"));
+
+      const totalExpensed = expenseData?.reduce((sum, e) => sum + (Number(e.amount) || 0), 0) || 0;
+      const expenseSync = totalAmount > 0 ? (totalExpensed / totalAmount * 100) : 0;
+
+      setSummaryStats({
+        totalQuantity,
+        totalAmount,
+        avgRate: totalQuantity > 0 ? totalAmount / totalQuantity : 0,
+        totalTransactions: records.length,
+        pendingPayments,
+        uniqueVendors,
+        totalExpensed,
+        expenseSync,
+      });
+
+      // Calculate daily trends
+      const days = eachDayOfInterval({ start, end });
+      const dailyData: DailyTrend[] = days.map(day => {
+        const dayStr = format(day, "yyyy-MM-dd");
+        const dayRecords = records.filter(r => r.procurement_date === dayStr);
+        const quantity = dayRecords.reduce((sum, r) => sum + (Number(r.quantity_liters) || 0), 0);
+        const amount = dayRecords.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0);
+        return {
+          date: format(day, "dd MMM"),
+          quantity,
+          amount,
+          avgRate: quantity > 0 ? amount / quantity : 0,
+        };
+      });
+      setDailyTrends(dailyData);
+
+      // Calculate vendor stats
+      const vendorMap = new Map<string, VendorStats>();
+      records.forEach(r => {
+        const existing = vendorMap.get(r.supplier_name) || {
+          name: r.supplier_name,
+          quantity: 0,
+          amount: 0,
+          avgRate: 0,
+          avgFat: 0,
+          avgSNF: 0,
+          transactions: 0,
+          fatSum: 0,
+          snfSum: 0,
+          fatCount: 0,
+          snfCount: 0,
+        };
+        
+        existing.quantity += Number(r.quantity_liters) || 0;
+        existing.amount += Number(r.total_amount) || 0;
+        existing.transactions += 1;
+        
+        if (r.fat_percentage) {
+          existing.fatSum = (existing.fatSum || 0) + Number(r.fat_percentage);
+          existing.fatCount = (existing.fatCount || 0) + 1;
+        }
+        if (r.snf_percentage) {
+          existing.snfSum = (existing.snfSum || 0) + Number(r.snf_percentage);
+          existing.snfCount = (existing.snfCount || 0) + 1;
+        }
+        
+        vendorMap.set(r.supplier_name, existing);
+      });
+
+      const vendorStatsArray: VendorStats[] = Array.from(vendorMap.values())
+        .map(v => ({
+          name: v.name.length > 15 ? v.name.substring(0, 15) + "..." : v.name,
+          quantity: v.quantity,
+          amount: v.amount,
+          avgRate: v.quantity > 0 ? v.amount / v.quantity : 0,
+          avgFat: v.fatCount > 0 ? v.fatSum! / v.fatCount : 0,
+          avgSNF: v.snfCount > 0 ? v.snfSum! / v.snfCount : 0,
+          transactions: v.transactions,
+        }))
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 10);
+      
+      setVendorStats(vendorStatsArray);
+
+      // Calculate quality metrics
+      const recordsWithFat = records.filter(r => r.fat_percentage);
+      const recordsWithSNF = records.filter(r => r.snf_percentage);
+      const avgFat = recordsWithFat.length > 0
+        ? recordsWithFat.reduce((sum, r) => sum + Number(r.fat_percentage), 0) / recordsWithFat.length
+        : 0;
+      const avgSNF = recordsWithSNF.length > 0
+        ? recordsWithSNF.reduce((sum, r) => sum + Number(r.snf_percentage), 0) / recordsWithSNF.length
+        : 0;
+
+      // Quality distribution (based on fat %)
+      const highQuality = recordsWithFat.filter(r => Number(r.fat_percentage) >= 4.0).length;
+      const mediumQuality = recordsWithFat.filter(r => Number(r.fat_percentage) >= 3.5 && Number(r.fat_percentage) < 4.0).length;
+      const lowQuality = recordsWithFat.filter(r => Number(r.fat_percentage) < 3.5).length;
+      const noData = records.length - recordsWithFat.length;
+
+      setQualityMetrics({
+        avgFat,
+        avgSNF,
+        highQualityPercent: recordsWithFat.length > 0 ? (highQuality / recordsWithFat.length) * 100 : 0,
+        qualityDistribution: [
+          { name: "Premium (≥4%)", value: highQuality, color: "#10b981" },
+          { name: "Standard (3.5-4%)", value: mediumQuality, color: "#f59e0b" },
+          { name: "Basic (<3.5%)", value: lowQuality, color: "#ef4444" },
+          { name: "No Data", value: noData, color: "#94a3b8" },
+        ].filter(d => d.value > 0),
+      });
+
       setLoading(false);
-      return;
+    } catch (err) {
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return fetchData(retryCount + 1);
+      }
+      console.error("Unexpected error fetching analytics:", err);
+      setFetchError("Network error. Please check your connection.");
+      toast({
+        title: "Error",
+        description: "Failed to load analytics data. Please try again.",
+        variant: "destructive",
+      });
+      setLoading(false);
     }
+  }, [dateRange, getDateRange, toast]);
 
-    const records = data || [];
-    setProcurements(records);
-
-    // Calculate summary stats
-    const totalQuantity = records.reduce((sum, r) => sum + Number(r.quantity_liters), 0);
-    const totalAmount = records.reduce((sum, r) => sum + Number(r.total_amount), 0);
-    const pendingPayments = records
-      .filter(r => r.payment_status !== "paid")
-      .reduce((sum, r) => sum + (Number(r.total_amount) - Number(r.paid_amount || 0)), 0);
-    const uniqueVendors = new Set(records.map(r => r.supplier_name)).size;
-
-    // Fetch expense data for sync tracking
-    const { data: expenseData } = await supabase
-      .from("expenses")
-      .select("amount, notes")
-      .like("notes", "[AUTO] milk_procurement:%")
-      .gte("expense_date", format(start, "yyyy-MM-dd"))
-      .lte("expense_date", format(end, "yyyy-MM-dd"));
-
-    const totalExpensed = expenseData?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-    const expenseSync = totalAmount > 0 ? (totalExpensed / totalAmount * 100) : 0;
-
-    setSummaryStats({
-      totalQuantity,
-      totalAmount,
-      avgRate: totalQuantity > 0 ? totalAmount / totalQuantity : 0,
-      totalTransactions: records.length,
-      pendingPayments,
-      uniqueVendors,
-      totalExpensed,
-      expenseSync,
-    });
-
-    // Calculate daily trends
-    const days = eachDayOfInterval({ start, end });
-    const dailyData: DailyTrend[] = days.map(day => {
-      const dayStr = format(day, "yyyy-MM-dd");
-      const dayRecords = records.filter(r => r.procurement_date === dayStr);
-      const quantity = dayRecords.reduce((sum, r) => sum + Number(r.quantity_liters), 0);
-      const amount = dayRecords.reduce((sum, r) => sum + Number(r.total_amount), 0);
-      return {
-        date: format(day, "dd MMM"),
-        quantity,
-        amount,
-        avgRate: quantity > 0 ? amount / quantity : 0,
-      };
-    });
-    setDailyTrends(dailyData);
-
-    // Calculate vendor stats
-    const vendorMap = new Map<string, VendorStats>();
-    records.forEach(r => {
-      const existing = vendorMap.get(r.supplier_name) || {
-        name: r.supplier_name,
-        quantity: 0,
-        amount: 0,
-        avgRate: 0,
-        avgFat: 0,
-        avgSNF: 0,
-        transactions: 0,
-        fatSum: 0,
-        snfSum: 0,
-        fatCount: 0,
-        snfCount: 0,
-      };
-      
-      existing.quantity += Number(r.quantity_liters);
-      existing.amount += Number(r.total_amount);
-      existing.transactions += 1;
-      
-      if (r.fat_percentage) {
-        existing.fatSum = (existing.fatSum || 0) + Number(r.fat_percentage);
-        existing.fatCount = (existing.fatCount || 0) + 1;
-      }
-      if (r.snf_percentage) {
-        existing.snfSum = (existing.snfSum || 0) + Number(r.snf_percentage);
-        existing.snfCount = (existing.snfCount || 0) + 1;
-      }
-      
-      vendorMap.set(r.supplier_name, existing);
-    });
-
-    const vendorStatsArray: VendorStats[] = Array.from(vendorMap.values())
-      .map(v => ({
-        name: v.name.length > 15 ? v.name.substring(0, 15) + "..." : v.name,
-        quantity: v.quantity,
-        amount: v.amount,
-        avgRate: v.quantity > 0 ? v.amount / v.quantity : 0,
-        avgFat: v.fatCount > 0 ? v.fatSum / v.fatCount : 0,
-        avgSNF: v.snfCount > 0 ? v.snfSum / v.snfCount : 0,
-        transactions: v.transactions,
-      }))
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 10);
-    
-    setVendorStats(vendorStatsArray);
-
-    // Calculate quality metrics
-    const recordsWithFat = records.filter(r => r.fat_percentage);
-    const recordsWithSNF = records.filter(r => r.snf_percentage);
-    const avgFat = recordsWithFat.length > 0
-      ? recordsWithFat.reduce((sum, r) => sum + Number(r.fat_percentage), 0) / recordsWithFat.length
-      : 0;
-    const avgSNF = recordsWithSNF.length > 0
-      ? recordsWithSNF.reduce((sum, r) => sum + Number(r.snf_percentage), 0) / recordsWithSNF.length
-      : 0;
-
-    // Quality distribution (based on fat %)
-    const highQuality = recordsWithFat.filter(r => Number(r.fat_percentage) >= 4.0).length;
-    const mediumQuality = recordsWithFat.filter(r => Number(r.fat_percentage) >= 3.5 && Number(r.fat_percentage) < 4.0).length;
-    const lowQuality = recordsWithFat.filter(r => Number(r.fat_percentage) < 3.5).length;
-    const noData = records.length - recordsWithFat.length;
-
-    setQualityMetrics({
-      avgFat,
-      avgSNF,
-      highQualityPercent: recordsWithFat.length > 0 ? (highQuality / recordsWithFat.length) * 100 : 0,
-      qualityDistribution: [
-        { name: "Premium (≥4%)", value: highQuality, color: "#10b981" },
-        { name: "Standard (3.5-4%)", value: mediumQuality, color: "#f59e0b" },
-        { name: "Basic (<3.5%)", value: lowQuality, color: "#ef4444" },
-        { name: "No Data", value: noData, color: "#94a3b8" },
-      ].filter(d => d.value > 0),
-    });
-
-    setLoading(false);
-  }, [dateRange, getDateRange]);
+  const handleRetry = () => {
+    fetchData();
+  };
 
   useEffect(() => {
     fetchData();
@@ -299,6 +335,22 @@ export function MilkProcurementAnalytics() {
           <Skeleton className="h-80" />
           <Skeleton className="h-80" />
         </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="text-destructive mb-4">
+          <BarChart3 className="h-16 w-16 mx-auto opacity-50" />
+        </div>
+        <p className="text-xl font-medium text-destructive mb-2">Failed to load analytics</p>
+        <p className="text-muted-foreground mb-6">{fetchError}</p>
+        <Button onClick={handleRetry} variant="outline">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Retry
+        </Button>
       </div>
     );
   }
