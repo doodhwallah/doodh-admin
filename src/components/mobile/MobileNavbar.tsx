@@ -28,6 +28,7 @@ import {
   Sun,
   Moon,
   User,
+  ShoppingCart,
 } from "lucide-react";
 import {
   Sheet,
@@ -56,6 +57,7 @@ const allNavItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, section: "main" },
   { title: "Cattle", href: "/cattle", icon: Beef, section: "cattle" },
   { title: "Milk Production", href: "/production", icon: Droplets, section: "production" },
+  { title: "Milk Procurement", href: "/procurement", icon: ShoppingCart, section: "production" },
   { title: "Products", href: "/products", icon: Milk, section: "main" },
   { title: "Customers", href: "/customers", icon: Users, section: "customers" },
   { title: "Deliveries", href: "/deliveries", icon: Truck, section: "deliveries" },

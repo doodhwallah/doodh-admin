@@ -25,7 +25,7 @@ const quickActions = [
   {
     title: "Procurement",
     icon: ShoppingCart,
-    href: "/production?tab=procurement",
+    href: "/procurement",
     color: "text-purple-500",
     bgColor: "bg-purple-500/10 hover:bg-purple-500/20",
   },
