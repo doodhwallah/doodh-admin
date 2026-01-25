@@ -9,7 +9,8 @@ import {
   Receipt, 
   Beef, 
   Users,
-  Zap
+  Zap,
+  ShoppingCart
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,13 @@ const quickActions = [
     href: "/production?action=add",
     color: "text-info",
     bgColor: "bg-info/10 hover:bg-info/20",
+  },
+  {
+    title: "Procurement",
+    icon: ShoppingCart,
+    href: "/production?tab=procurement",
+    color: "text-purple-500",
+    bgColor: "bg-purple-500/10 hover:bg-purple-500/20",
   },
   {
     title: "New Delivery",
