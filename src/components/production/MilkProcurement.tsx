@@ -36,7 +36,8 @@ import {
   TrendingUp,
   Calendar,
   Pencil,
-  Trash2
+  Trash2,
+  RefreshCw
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -107,6 +108,7 @@ export function MilkProcurement() {
     pendingPayments: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -120,8 +122,9 @@ export function MilkProcurement() {
   const { logMilkProcurementPayment } = useExpenseAutomation();
   const queryClient = useQueryClient();
 
-  // Fetch vendors with error handling
-  const fetchVendors = useCallback(async () => {
+  // Fetch vendors with error handling and retry
+  const fetchVendors = useCallback(async (retryCount = 0) => {
+    const maxRetries = 3;
     try {
       const { data, error } = await supabase
         .from("milk_vendors")
@@ -130,17 +133,27 @@ export function MilkProcurement() {
         .order("name");
       
       if (error) {
+        if (retryCount < maxRetries && error.message?.includes('fetch')) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return fetchVendors(retryCount + 1);
+        }
         console.error("Error fetching vendors:", error);
         return;
       }
       setVendors(data || []);
     } catch (err) {
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return fetchVendors(retryCount + 1);
+      }
       console.error("Unexpected error fetching vendors:", err);
     }
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (retryCount = 0) => {
+    const maxRetries = 3;
     setLoading(true);
+    setFetchError(null);
     const today = format(new Date(), "yyyy-MM-dd");
     const weekAgo = format(subDays(new Date(), 7), "yyyy-MM-dd");
 
@@ -153,9 +166,14 @@ export function MilkProcurement() {
         .limit(100);
 
       if (error) {
+        if (retryCount < maxRetries && error.message?.includes('fetch')) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return fetchData(retryCount + 1);
+        }
+        setFetchError(error.message || "Failed to load procurement data");
         toast({
           title: "Error fetching procurement data",
-          description: error.message,
+          description: "Please check your connection and try again.",
           variant: "destructive",
         });
         setLoading(false);
@@ -176,14 +194,20 @@ export function MilkProcurement() {
         weekQuantity: weekData.reduce((sum, p) => sum + (Number(p.quantity_liters) || 0), 0),
         pendingPayments: pending.reduce((sum, p) => sum + ((Number(p.total_amount) || 0) - (Number(p.paid_amount) || 0)), 0),
       });
+      
+      setLoading(false);
     } catch (err) {
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return fetchData(retryCount + 1);
+      }
       console.error("Unexpected error fetching procurement data:", err);
+      setFetchError("Network error. Please check your connection.");
       toast({
         title: "Error",
         description: "Failed to load procurement data. Please try again.",
         variant: "destructive",
       });
-    } finally {
       setLoading(false);
     }
   }, [toast]);
@@ -192,6 +216,12 @@ export function MilkProcurement() {
     fetchData();
     fetchVendors();
   }, [fetchData, fetchVendors]);
+
+  // Manual retry function for user-initiated retries
+  const handleRetry = () => {
+    fetchData();
+    fetchVendors();
+  };
 
   const calculateTotal = (quantity: string, rate: string) => {
     const qty = parseFloat(quantity) || 0;
@@ -565,13 +595,27 @@ export function MilkProcurement() {
           </Button>
         </CardHeader>
         <CardContent>
-          <DataTable
-            data={procurements}
-            columns={columns}
-            loading={loading}
-            searchPlaceholder="Search by supplier, date..."
-            emptyMessage="No procurement records yet. Start adding external milk purchases."
-          />
+          {fetchError ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="text-destructive mb-4">
+                <Truck className="h-12 w-12 mx-auto opacity-50" />
+              </div>
+              <p className="text-lg font-medium text-destructive mb-2">Failed to load data</p>
+              <p className="text-muted-foreground mb-4">{fetchError}</p>
+              <Button onClick={handleRetry} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <DataTable
+              data={procurements}
+              columns={columns}
+              loading={loading}
+              searchPlaceholder="Search by supplier, date..."
+              emptyMessage="No procurement records yet. Start adding external milk purchases."
+            />
+          )}
         </CardContent>
       </Card>
 
