@@ -1,73 +1,55 @@
 
-# Separating Milk Production from Milk Procurement
+# PIN Reset/Change System - Complete Fix
 
-## Overview
-Currently, both **Milk Production** (own cattle milk collection) and **Milk Procurement** (external vendor purchases) are combined in a single `/production` page with 4 tabs. This plan separates them into two distinct modules with their own navigation entries, pages, and dedicated functionality.
+## Problem Summary
+Users cannot change or reset their PIN because of multiple interconnected issues in the authentication flow.
 
-## Current Structure
-```text
-/production (single page with 4 tabs)
-├── Tab 1: Own Production  → Own cattle milk tracking
-├── Tab 2: Procurement     → External vendor purchases
-├── Tab 3: Vendors         → Vendor management
-└── Tab 4: Analytics       → Procurement analytics
-```
+## Root Causes Identified
 
-## Proposed New Structure
-```text
-/production (dedicated page with 2 tabs)
-├── Tab 1: Daily Collection → Own cattle milk tracking
-└── Tab 2: History          → Historical production data
+### 1. Database Functions Can't Find Cryptography Functions
+The functions `update_pin_only` and `update_user_profile_with_pin` use PostgreSQL's `crypt()` and `gen_salt()` functions, but these are in the `extensions` schema. Currently, the functions only search in `public` schema, so the cryptography calls silently fail.
 
-/procurement (NEW dedicated page with 3 tabs)
-├── Tab 1: Daily Entries   → External milk purchases
-├── Tab 2: Vendors         → Vendor management
-└── Tab 3: Analytics       → Procurement analytics
-```
+### 2. No PIN Hashes Stored in Database
+All users have empty PIN hash values. When creating accounts, the PIN hash storage silently failed due to issue #1, so no hashes were ever saved.
+
+### 3. Change PIN Verification Always Fails
+The change-pin system first verifies the current PIN by checking the stored hash. Since there's no hash stored, this verification always fails with "Current PIN is incorrect".
+
+### 4. Bootstrap Process Doesn't Save PIN Hash
+When the super admin account was created, the PIN hash was never stored because that step was missing from the bootstrap process.
+
+## Solution Overview
+
+This fix will:
+- Update database functions to find cryptography correctly
+- Add PIN hash storage to the bootstrap process
+- Improve the change-pin flow to handle first-time PIN setup
+- Fix the reset-pin function for admins
+- Restore PIN hashes for all existing users
 
 ---
 
 ## Implementation Steps
 
-### Step 1: Create New Procurement Page
-Create a new dedicated page at `src/pages/Procurement.tsx` that will house:
-- **Daily Entries Tab**: The current `MilkProcurement` component for recording vendor milk purchases
-- **Vendors Tab**: The current `VendorManagement` component for managing vendor details
-- **Analytics Tab**: The current `MilkProcurementAnalytics` component for visualizations
+### Step 1: Fix Database Functions
+Update the `update_pin_only` and `update_user_profile_with_pin` functions to include `extensions` in their search path so they can find `crypt()` and `gen_salt()`.
 
-The page will have its own header with the title "Milk Procurement" and description emphasizing external vendor purchases.
+### Step 2: Fix the `change-pin` Edge Function
+Modify the change-pin function to:
+- First check if user has a PIN hash stored
+- If no hash exists (first-time setup), verify the current PIN against the auth password instead
+- After successful verification, store the new PIN hash AND update the auth password
 
-### Step 2: Simplify Production Page
-Modify `src/pages/Production.tsx` to:
-- Remove the 4-tab structure, focusing only on own production
-- Keep the stats cards (Today's Total, Morning Session, Evening Session)
-- Keep the production data table and recording dialog
-- Keep the milk history dialog functionality
-- Remove imports for `MilkProcurement`, `VendorManagement`, and `MilkProcurementAnalytics`
+### Step 3: Fix the `reset-user-pin` Edge Function
+The reset function is simpler since admins don't need to verify the old PIN, but it should:
+- Update both the PIN hash in the profiles table
+- Update the auth password for consistency
 
-### Step 3: Add New Route
-Update `src/App.tsx` to add the new route:
-```tsx
-<Route path="/procurement" element={<ProcurementPage />} />
-```
+### Step 4: Fix the `bootstrap-admin` Edge Function
+Add PIN hash storage to the bootstrap process so new admin accounts have proper PIN hashes from the start.
 
-### Step 4: Update Navigation
-**Sidebar (`AppSidebar.tsx`)**:
-- Keep "Milk Production" pointing to `/production`
-- Add new "Milk Procurement" entry pointing to `/procurement` with a `ShoppingCart` or `Truck` icon
-- Both items will be in the "production" section for role-based access
-
-**Mobile Navbar (`MobileNavbar.tsx`)**:
-- Add matching navigation entry for mobile users
-
-### Step 5: Update Quick Actions
-Modify `QuickActionsCard.tsx`:
-- Change "Procurement" action from `/production?tab=procurement` to `/procurement`
-
-### Step 6: Update Deep Links
-Fix any URL parameters that reference the old tab structure:
-- `?tab=procurement` links should point to `/procurement`
-- The `?action=add` parameter on Production page remains unchanged
+### Step 5: Create a Backfill Migration
+Run a one-time operation to set PIN hashes for all existing users based on their current auth passwords (which are their PINs).
 
 ---
 
@@ -75,61 +57,66 @@ Fix any URL parameters that reference the old tab structure:
 
 | File | Changes |
 |------|---------|
-| `src/pages/Procurement.tsx` | **NEW** - Dedicated procurement page with Vendors & Analytics tabs |
-| `src/pages/Production.tsx` | Remove procurement tabs, simplify to own production only |
-| `src/App.tsx` | Add route for `/procurement` |
-| `src/components/layout/AppSidebar.tsx` | Add "Milk Procurement" nav item |
-| `src/components/mobile/MobileNavbar.tsx` | Add "Milk Procurement" nav item |
-| `src/components/dashboard/QuickActionsCard.tsx` | Update Procurement link to `/procurement` |
-| `src/hooks/useUserRole.ts` | Verify "production" section permissions cover procurement |
+| `supabase/functions/change-pin/index.ts` | Add fallback verification against auth password when no PIN hash exists; ensure proper hash storage |
+| `supabase/functions/reset-user-pin/index.ts` | Ensure both PIN hash and auth password are updated consistently |
+| `supabase/functions/bootstrap-admin/index.ts` | Add PIN hash storage during bootstrap |
+| Database migration | Fix function search paths to include `extensions` schema |
 
 ---
 
 ## Technical Details
 
-### New Navigation Item
-```typescript
-{ title: "Milk Procurement", href: "/procurement", icon: ShoppingCart, section: "production" }
+### Database Function Fix
+```sql
+-- Current (broken):
+CREATE FUNCTION update_pin_only(...)
+SET search_path TO 'public'
+
+-- Fixed:
+CREATE FUNCTION update_pin_only(...)
+SET search_path TO 'public', 'extensions'
 ```
 
-By using `section: "production"`, all existing role permissions for the production section automatically apply to procurement as well:
-- `super_admin`, `manager`, `farm_worker` will have access
-
-### New Page Structure (Procurement.tsx)
-```tsx
-// Tab structure for Procurement page
-<Tabs value={activeTab}>
-  <TabsList>
-    <TabsTrigger value="entries">Daily Entries</TabsTrigger>
-    <TabsTrigger value="vendors">Vendors</TabsTrigger>
-    <TabsTrigger value="analytics">Analytics</TabsTrigger>
-  </TabsList>
-  <TabsContent value="entries"><MilkProcurement /></TabsContent>
-  <TabsContent value="vendors"><VendorManagement /></TabsContent>
-  <TabsContent value="analytics"><MilkProcurementAnalytics /></TabsContent>
-</Tabs>
+### Change PIN Flow (New Logic)
+```text
+1. User submits current PIN + new PIN
+2. Check if pin_hash exists in profiles
+3. IF pin_hash exists:
+   → Verify using crypt(current_pin, pin_hash)
+4. IF pin_hash is NULL:
+   → Verify using auth.signInWithPassword (current_pin = auth password)
+5. On success:
+   → Update profiles.pin_hash using crypt(new_pin, gen_salt('bf'))
+   → Update auth password to new_pin
 ```
 
-### URL Parameter Handling
-The new `/procurement` page will support:
-- `?tab=vendors` - Opens directly to Vendors tab
-- `?tab=analytics` - Opens directly to Analytics tab
-- Default opens to Daily Entries tab
+### Reset PIN Flow (Admin Action)
+```text
+1. Admin clicks "Reset PIN" for a user
+2. Admin enters new 6-digit PIN
+3. Edge function (with admin verification):
+   → Update profiles.pin_hash using crypt(new_pin, gen_salt('bf'))
+   → Update auth password to new_pin
+4. User can now login with new PIN
+```
 
 ---
 
-## Benefits of Separation
+## Expected Outcome
 
-1. **Clearer Navigation**: Users immediately understand the difference between own production and external procurement
-2. **Better UX**: Each page is focused on its specific purpose
-3. **Scalability**: Easier to add features specific to each module
-4. **Permissions**: Can add separate role permissions for procurement if needed in the future
-5. **URL Sharing**: Direct links to procurement vs production are more intuitive
+After implementing these fixes:
+- Users can change their own PIN from Settings → Security
+- Super Admin can reset any user's PIN from User Management
+- New users created via "Add New User" will have proper PIN hashes
+- Existing users will have their PIN hashes restored
+- The system maintains consistency between PIN hash and auth password
 
 ---
 
-## Backward Compatibility
+## Verification Steps
 
-- Existing bookmarks to `/production` will continue to work (showing own production)
-- The old `?tab=procurement` parameter will be handled gracefully (redirect or ignore)
-- All existing data and functionality remain unchanged - this is purely a UI restructuring
+After implementation:
+1. Test changing PIN as super admin (Settings → Security)
+2. Test resetting another user's PIN (User Management → Reset PIN)
+3. Verify the user can login with the new PIN
+4. Check database to confirm pin_hash is no longer null
