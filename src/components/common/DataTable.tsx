@@ -1,3 +1,4 @@
+import { ReactNode, useState } from "react";
 import {
   Table,
   TableBody,
@@ -8,15 +9,17 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { PullToRefresh } from "@/components/mobile/PullToRefresh";
 
 interface Column<T> {
   key: string;
   header: string;
   render?: (item: T) => React.ReactNode;
   className?: string;
+  hideOnMobile?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -27,8 +30,11 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   onRowClick?: (item: T) => void;
   emptyMessage?: string;
+  emptyIcon?: ReactNode;
   className?: string;
   itemsPerPage?: number;
+  renderMobileCard?: (item: T, index: number) => ReactNode;
+  onRefresh?: () => Promise<void>;
 }
 
 export function DataTable<T extends { id: string }>({
@@ -39,11 +45,16 @@ export function DataTable<T extends { id: string }>({
   searchPlaceholder = "Search...",
   onRowClick,
   emptyMessage = "No data found",
+  emptyIcon,
   className,
   itemsPerPage = 10,
+  renderMobileCard,
+  onRefresh,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [mobileVisibleItems, setMobileVisibleItems] = useState(itemsPerPage);
+  const isMobile = useIsMobile();
 
   const filteredData = searchable
     ? data.filter((item) =>
@@ -55,12 +66,108 @@ export function DataTable<T extends { id: string }>({
       )
     : data;
 
+  // Desktop pagination
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
+  // Mobile infinite scroll
+  const mobileDisplayedData = filteredData.slice(0, mobileVisibleItems);
+  const hasMoreMobile = mobileVisibleItems < filteredData.length;
+
+  // Filter columns for mobile (hide columns marked with hideOnMobile)
+  const visibleColumns = isMobile 
+    ? columns.filter(col => !col.hideOnMobile)
+    : columns;
+
+  const handleLoadMore = () => {
+    setMobileVisibleItems((prev) => prev + itemsPerPage);
+  };
+
+  // Mobile card view
+  if (isMobile && renderMobileCard) {
+    const content = (
+      <div className={cn("space-y-4", className)}>
+        {searchable && (
+          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pb-2 -mx-1 px-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder={searchPlaceholder}
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setMobileVisibleItems(itemsPerPage);
+                }}
+                className="pl-10 h-12 text-base rounded-xl"
+              />
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3">
+            <div className="relative h-12 w-12">
+              <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+              <div className="absolute inset-0 rounded-full border-2 border-t-primary animate-spin" />
+            </div>
+            <span className="text-muted-foreground font-medium">Loading...</span>
+          </div>
+        ) : mobileDisplayedData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3">
+            <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
+              {emptyIcon || <Search className="h-7 w-7 text-muted-foreground" />}
+            </div>
+            <span className="text-muted-foreground font-medium text-center">
+              {emptyMessage}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {mobileDisplayedData.map((item, index) => (
+                <div 
+                  key={item.id}
+                  className="animate-slide-up"
+                  style={{ animationDelay: `${Math.min(index * 50, 300)}ms` }}
+                  onClick={() => onRowClick?.(item)}
+                >
+                  {renderMobileCard(item, index)}
+                </div>
+              ))}
+            </div>
+
+            {hasMoreMobile && (
+              <div className="flex justify-center pt-2 pb-4">
+                <Button
+                  variant="outline"
+                  onClick={handleLoadMore}
+                  className="gap-2"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                  Load More ({filteredData.length - mobileVisibleItems} remaining)
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+
+    if (onRefresh) {
+      return (
+        <PullToRefresh onRefresh={onRefresh} disabled={loading}>
+          {content}
+        </PullToRefresh>
+      );
+    }
+
+    return content;
+  }
+
+  // Desktop table view
   return (
     <div className={cn("space-y-4", className)}>
       {searchable && (
@@ -79,63 +186,65 @@ export function DataTable<T extends { id: string }>({
       )}
 
       <div className="rounded-xl border bg-card shadow-soft overflow-hidden animate-fade-in" style={{ animationDelay: '100ms' }}>
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-b-2">
-              {columns.map((column) => (
-                <TableHead key={column.key} className={cn("font-semibold", column.className)}>
-                  {column.header}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody className="stagger-animation">
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-40 text-center">
-                  <div className="flex flex-col items-center justify-center gap-3">
-                    <div className="relative h-10 w-10">
-                      <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
-                      <div className="absolute inset-0 rounded-full border-2 border-t-primary animate-spin" />
-                    </div>
-                    <span className="text-muted-foreground font-medium">Loading data...</span>
-                  </div>
-                </TableCell>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent border-b-2">
+                {visibleColumns.map((column) => (
+                  <TableHead key={column.key} className={cn("font-semibold", column.className)}>
+                    {column.header}
+                  </TableHead>
+                ))}
               </TableRow>
-            ) : paginatedData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-40 text-center">
-                  <div className="flex flex-col items-center justify-center gap-2">
-                    <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center">
-                      <Search className="h-6 w-6 text-muted-foreground" />
+            </TableHeader>
+            <TableBody className="stagger-animation">
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={visibleColumns.length} className="h-40 text-center">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <div className="relative h-10 w-10">
+                        <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+                        <div className="absolute inset-0 rounded-full border-2 border-t-primary animate-spin" />
+                      </div>
+                      <span className="text-muted-foreground font-medium">Loading data...</span>
                     </div>
-                    <span className="text-muted-foreground font-medium">{emptyMessage}</span>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginatedData.map((item, index) => (
-                <TableRow
-                  key={item.id}
-                  onClick={() => onRowClick?.(item)}
-                  className={cn(
-                    "animate-slide-up group",
-                    onRowClick && "cursor-pointer"
-                  )}
-                  style={{ animationDelay: `${index * 40}ms` }}
-                >
-                  {columns.map((column) => (
-                    <TableCell key={column.key} className={cn("transition-colors", column.className)}>
-                      {column.render
-                        ? column.render(item)
-                        : (item as Record<string, unknown>)[column.key]?.toString() || "-"}
-                    </TableCell>
-                  ))}
+                  </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : paginatedData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={visibleColumns.length} className="h-40 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center">
+                        {emptyIcon || <Search className="h-6 w-6 text-muted-foreground" />}
+                      </div>
+                      <span className="text-muted-foreground font-medium">{emptyMessage}</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedData.map((item, index) => (
+                  <TableRow
+                    key={item.id}
+                    onClick={() => onRowClick?.(item)}
+                    className={cn(
+                      "animate-slide-up group",
+                      onRowClick && "cursor-pointer"
+                    )}
+                    style={{ animationDelay: `${index * 40}ms` }}
+                  >
+                    {visibleColumns.map((column) => (
+                      <TableCell key={column.key} className={cn("transition-colors", column.className)}>
+                        {column.render
+                          ? column.render(item)
+                          : (item as Record<string, unknown>)[column.key]?.toString() || "-"}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {totalPages > 1 && (
