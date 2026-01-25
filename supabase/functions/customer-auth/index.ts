@@ -319,29 +319,19 @@ serve(async (req) => {
           );
         }
 
-        // Update pin_hash using SQL with crypt function via raw query
-        // We use the update_customer_pin RPC but with a workaround for first-time setup
-        const { error: updateError } = await supabaseAdmin.rpc('update_customer_pin', {
+        // Update pin_hash using the new set_customer_pin_hash RPC
+        const { data: updateResult, error: updateError } = await supabaseAdmin.rpc('set_customer_pin_hash', {
           _customer_id: customerId,
-          _current_pin: currentPin,  // This will fail verification since no hash exists
           _new_pin: newPin
         });
 
-        // If the RPC failed (likely because no hash existed), manually set via raw SQL
         if (updateError) {
-          // Use a direct SQL update with crypt - this requires using the service role
-          const { error: sqlError } = await supabaseAdmin
-            .from('customer_accounts')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('customer_id', customerId);
-
-          // The hash update needs to happen via RPC that can access pgcrypto
-          // Since we verified via auth password, we know current PIN is correct
-          // Just update the auth password which is the primary login method
-          console.log('Updating auth password for customer (hash will be set on next proper change)');
+          console.error('Error updating PIN hash:', updateError);
+        } else {
+          console.log('PIN hash updated successfully for customer:', customerId);
         }
 
-        // Always update the auth password to keep in sync
+        // Also update the auth password to keep in sync
         if (account.user_id) {
           const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(account.user_id, {
             password: newPin
